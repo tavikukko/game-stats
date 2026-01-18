@@ -191,6 +191,9 @@ export const validateImportedMatches = (data: unknown): Match[] | null => {
     if (!match.stats || !isHalfStats(match.stats.first) || !isHalfStats(match.stats.second)) {
       return null
     }
+    if (!match.meta.collectorRole) {
+      match.meta.collectorRole = 'passing'
+    }
     matches.push(match)
   }
 

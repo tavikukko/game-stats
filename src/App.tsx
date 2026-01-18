@@ -4,7 +4,7 @@ import { Link, Route, Routes, useNavigate, useParams } from 'react-router-dom'
 import Counter from './components/Counter'
 import SectionCard from './components/SectionCard'
 import { useStore } from './store'
-import type { HalfKey, HalfStats, Match, MatchMeta } from './types'
+import type { HalfKey, HalfStats, Match, MatchMeta, StatRole } from './types'
 import { buildMatchCsv, buildShareText, downloadFile, validateImportedMatches } from './utils/export'
 
 const formatDate = (iso: string) => {
@@ -22,6 +22,13 @@ const formatDate = (iso: string) => {
 
 const pct = (completed: number, attempts: number) =>
   attempts > 0 ? Math.round((completed / attempts) * 100) : 0
+
+const roleLabel: Record<StatRole, string> = {
+  passing: 'Syöttöpeli',
+  attackThird: 'Hyökkäyskolmannekselle pääsy',
+  boxEntry: 'Boxiin pääsy',
+  shots: 'Laukaukset',
+}
 
 const sumHalfStats = (a: HalfStats, b: HalfStats): HalfStats => ({
   passing: {
@@ -115,6 +122,7 @@ const HomeScreen = () => {
                 <div className="match-meta">
                   {formatDate(match.meta.dateTime)} · {match.meta.location}
                 </div>
+                <div className="match-meta">Kerääjä: {roleLabel[match.meta.collectorRole]}</div>
                 <div className="match-meta">Päivitetty: {formatDate(match.updatedAt)}</div>
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                   <Link className="btn secondary" to={`/match/${match.id}`}>
@@ -217,6 +225,7 @@ const NewMatchScreen = () => {
     homeTeam: '',
     awayTeam: '',
     notes: '',
+    collectorRole: 'passing',
   })
 
   const updateField = (key: keyof MatchMeta, value: string) => {
@@ -290,6 +299,20 @@ const NewMatchScreen = () => {
                 placeholder="Lisätiedot"
               />
             </label>
+            <label>
+              <span>Kerättävä tilasto</span>
+              <select
+                value={form.collectorRole}
+                onChange={(event) =>
+                  updateField('collectorRole', event.target.value as MatchMeta['collectorRole'])
+                }
+              >
+                <option value="passing">Syöttöpeli</option>
+                <option value="attackThird">Hyökkäyskolmannekselle pääsy</option>
+                <option value="boxEntry">Boxiin pääsy</option>
+                <option value="shots">Laukaukset</option>
+              </select>
+            </label>
           </div>
         </div>
         <button type="submit" className="btn block">
@@ -318,6 +341,7 @@ const MatchScreen = () => {
   }
 
   const stats = match.stats[half]
+  const role = match.meta.collectorRole ?? 'passing'
   const ownPct = pct(stats.passing.ownHalf.completed, stats.passing.ownHalf.attempts)
   const oppPct = pct(stats.passing.oppHalf.completed, stats.passing.oppHalf.attempts)
   const attackTotal = stats.attackThird.pass + stats.attackThird.carry
@@ -352,127 +376,143 @@ const MatchScreen = () => {
         </div>
       </header>
       <div className="container">
-        <SectionCard title="Syöttöpeli" onReset={() => resetSection(match.id, half, 'passing')}>
-          <div className="subsection">
-            <h3>Oma puolisko</h3>
-            <Counter
-              label="Yritykset"
-              value={stats.passing.ownHalf.attempts}
-              onIncrement={() => updateCounter(match.id, half, 'passing.ownHalf.attempts', 1)}
-              onDecrement={() => updateCounter(match.id, half, 'passing.ownHalf.attempts', -1)}
-            />
-            <Counter
-              label="Onnistuneet"
-              value={stats.passing.ownHalf.completed}
-              onIncrement={() => updateCounter(match.id, half, 'passing.ownHalf.completed', 1)}
-              onDecrement={() => updateCounter(match.id, half, 'passing.ownHalf.completed', -1)}
-            />
-          </div>
-          <div className="subsection">
-            <h3>Vastustajan puolisko</h3>
-            <Counter
-              label="Yritykset"
-              value={stats.passing.oppHalf.attempts}
-              onIncrement={() => updateCounter(match.id, half, 'passing.oppHalf.attempts', 1)}
-              onDecrement={() => updateCounter(match.id, half, 'passing.oppHalf.attempts', -1)}
-            />
-            <Counter
-              label="Onnistuneet"
-              value={stats.passing.oppHalf.completed}
-              onIncrement={() => updateCounter(match.id, half, 'passing.oppHalf.completed', 1)}
-              onDecrement={() => updateCounter(match.id, half, 'passing.oppHalf.completed', -1)}
-            />
-          </div>
-        </SectionCard>
+        {role === 'passing' && (
+          <SectionCard title="Syöttöpeli" onReset={() => resetSection(match.id, half, 'passing')}>
+            <div className="subsection">
+              <h3>Oma puolisko</h3>
+              <Counter
+                label="Yritykset"
+                value={stats.passing.ownHalf.attempts}
+                onIncrement={() => updateCounter(match.id, half, 'passing.ownHalf.attempts', 1)}
+                onDecrement={() => updateCounter(match.id, half, 'passing.ownHalf.attempts', -1)}
+              />
+              <Counter
+                label="Onnistuneet"
+                value={stats.passing.ownHalf.completed}
+                onIncrement={() => updateCounter(match.id, half, 'passing.ownHalf.completed', 1)}
+                onDecrement={() => updateCounter(match.id, half, 'passing.ownHalf.completed', -1)}
+              />
+            </div>
+            <div className="subsection">
+              <h3>Vastustajan puolisko</h3>
+              <Counter
+                label="Yritykset"
+                value={stats.passing.oppHalf.attempts}
+                onIncrement={() => updateCounter(match.id, half, 'passing.oppHalf.attempts', 1)}
+                onDecrement={() => updateCounter(match.id, half, 'passing.oppHalf.attempts', -1)}
+              />
+              <Counter
+                label="Onnistuneet"
+                value={stats.passing.oppHalf.completed}
+                onIncrement={() => updateCounter(match.id, half, 'passing.oppHalf.completed', 1)}
+                onDecrement={() => updateCounter(match.id, half, 'passing.oppHalf.completed', -1)}
+              />
+            </div>
+          </SectionCard>
+        )}
 
-        <SectionCard
-          title="Hyökkäyskolmannekselle pääsy"
-          onReset={() => resetSection(match.id, half, 'attackThird')}
-        >
-          <Counter
-            label="Syöttämällä"
-            value={stats.attackThird.pass}
-            onIncrement={() => updateCounter(match.id, half, 'attackThird.pass', 1)}
-            onDecrement={() => updateCounter(match.id, half, 'attackThird.pass', -1)}
-          />
-          <Counter
-            label="Kuljettamalla"
-            value={stats.attackThird.carry}
-            onIncrement={() => updateCounter(match.id, half, 'attackThird.carry', 1)}
-            onDecrement={() => updateCounter(match.id, half, 'attackThird.carry', -1)}
-          />
-        </SectionCard>
+        {role === 'attackThird' && (
+          <SectionCard
+            title="Hyökkäyskolmannekselle pääsy"
+            onReset={() => resetSection(match.id, half, 'attackThird')}
+          >
+            <Counter
+              label="Syöttämällä"
+              value={stats.attackThird.pass}
+              onIncrement={() => updateCounter(match.id, half, 'attackThird.pass', 1)}
+              onDecrement={() => updateCounter(match.id, half, 'attackThird.pass', -1)}
+            />
+            <Counter
+              label="Kuljettamalla"
+              value={stats.attackThird.carry}
+              onIncrement={() => updateCounter(match.id, half, 'attackThird.carry', 1)}
+              onDecrement={() => updateCounter(match.id, half, 'attackThird.carry', -1)}
+            />
+          </SectionCard>
+        )}
 
-        <SectionCard title="Boxiin pääsy" onReset={() => resetSection(match.id, half, 'boxEntry')}>
-          <Counter
-            label="Syöttämällä"
-            value={stats.boxEntry.pass}
-            onIncrement={() => updateCounter(match.id, half, 'boxEntry.pass', 1)}
-            onDecrement={() => updateCounter(match.id, half, 'boxEntry.pass', -1)}
-          />
-          <Counter
-            label="Kuljettamalla"
-            value={stats.boxEntry.carry}
-            onIncrement={() => updateCounter(match.id, half, 'boxEntry.carry', 1)}
-            onDecrement={() => updateCounter(match.id, half, 'boxEntry.carry', -1)}
-          />
-        </SectionCard>
+        {role === 'boxEntry' && (
+          <SectionCard title="Boxiin pääsy" onReset={() => resetSection(match.id, half, 'boxEntry')}>
+            <Counter
+              label="Syöttämällä"
+              value={stats.boxEntry.pass}
+              onIncrement={() => updateCounter(match.id, half, 'boxEntry.pass', 1)}
+              onDecrement={() => updateCounter(match.id, half, 'boxEntry.pass', -1)}
+            />
+            <Counter
+              label="Kuljettamalla"
+              value={stats.boxEntry.carry}
+              onIncrement={() => updateCounter(match.id, half, 'boxEntry.carry', 1)}
+              onDecrement={() => updateCounter(match.id, half, 'boxEntry.carry', -1)}
+            />
+          </SectionCard>
+        )}
 
-        <SectionCard title="Laukaukset" onReset={() => resetSection(match.id, half, 'shots')}>
-          <div className="subsection">
-            <h3>Me</h3>
-            <Counter
-              label="Kohti"
-              value={stats.shots.us.on}
-              onIncrement={() => updateCounter(match.id, half, 'shots.us.on', 1)}
-              onDecrement={() => updateCounter(match.id, half, 'shots.us.on', -1)}
-            />
-            <Counter
-              label="Ohi"
-              value={stats.shots.us.off}
-              onIncrement={() => updateCounter(match.id, half, 'shots.us.off', 1)}
-              onDecrement={() => updateCounter(match.id, half, 'shots.us.off', -1)}
-            />
-          </div>
-          <div className="subsection">
-            <h3>Vastustaja</h3>
-            <Counter
-              label="Kohti"
-              value={stats.shots.opp.on}
-              onIncrement={() => updateCounter(match.id, half, 'shots.opp.on', 1)}
-              onDecrement={() => updateCounter(match.id, half, 'shots.opp.on', -1)}
-            />
-            <Counter
-              label="Ohi"
-              value={stats.shots.opp.off}
-              onIncrement={() => updateCounter(match.id, half, 'shots.opp.off', 1)}
-              onDecrement={() => updateCounter(match.id, half, 'shots.opp.off', -1)}
-            />
-          </div>
-        </SectionCard>
+        {role === 'shots' && (
+          <SectionCard title="Laukaukset" onReset={() => resetSection(match.id, half, 'shots')}>
+            <div className="subsection">
+              <h3>Me</h3>
+              <Counter
+                label="Kohti"
+                value={stats.shots.us.on}
+                onIncrement={() => updateCounter(match.id, half, 'shots.us.on', 1)}
+                onDecrement={() => updateCounter(match.id, half, 'shots.us.on', -1)}
+              />
+              <Counter
+                label="Ohi"
+                value={stats.shots.us.off}
+                onIncrement={() => updateCounter(match.id, half, 'shots.us.off', 1)}
+                onDecrement={() => updateCounter(match.id, half, 'shots.us.off', -1)}
+              />
+            </div>
+            <div className="subsection">
+              <h3>Vastustaja</h3>
+              <Counter
+                label="Kohti"
+                value={stats.shots.opp.on}
+                onIncrement={() => updateCounter(match.id, half, 'shots.opp.on', 1)}
+                onDecrement={() => updateCounter(match.id, half, 'shots.opp.on', -1)}
+              />
+              <Counter
+                label="Ohi"
+                value={stats.shots.opp.off}
+                onIncrement={() => updateCounter(match.id, half, 'shots.opp.off', 1)}
+                onDecrement={() => updateCounter(match.id, half, 'shots.opp.off', -1)}
+              />
+            </div>
+          </SectionCard>
+        )}
 
         <div className="card">
           <div className="summary-grid">
-            <div className="summary-row">
-              <span className="summary-label">Syöttö% (oma / vast)</span>
-              <strong>
-                {ownPct}% / {oppPct}%
-              </strong>
-            </div>
-            <div className="summary-row">
-              <span className="summary-label">Hyökkäyskolmannes yhteensä</span>
-              <strong>{attackTotal}</strong>
-            </div>
-            <div className="summary-row">
-              <span className="summary-label">Boxiin yhteensä</span>
-              <strong>{boxTotal}</strong>
-            </div>
-            <div className="summary-row">
-              <span className="summary-label">Laukaukset yhteensä (me / vast)</span>
-              <strong>
-                {shotsUsTotal} / {shotsOppTotal}
-              </strong>
-            </div>
+            {role === 'passing' && (
+              <div className="summary-row">
+                <span className="summary-label">Syöttö% (oma / vast)</span>
+                <strong>
+                  {ownPct}% / {oppPct}%
+                </strong>
+              </div>
+            )}
+            {role === 'attackThird' && (
+              <div className="summary-row">
+                <span className="summary-label">Hyökkäyskolmannes yhteensä</span>
+                <strong>{attackTotal}</strong>
+              </div>
+            )}
+            {role === 'boxEntry' && (
+              <div className="summary-row">
+                <span className="summary-label">Boxiin yhteensä</span>
+                <strong>{boxTotal}</strong>
+              </div>
+            )}
+            {role === 'shots' && (
+              <div className="summary-row">
+                <span className="summary-label">Laukaukset yhteensä (me / vast)</span>
+                <strong>
+                  {shotsUsTotal} / {shotsOppTotal}
+                </strong>
+              </div>
+            )}
           </div>
         </div>
 

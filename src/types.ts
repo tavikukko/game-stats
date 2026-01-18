@@ -20,6 +20,8 @@ export interface BoxEntryStats {
   carry: number
 }
 
+export type StatRole = 'passing' | 'attackThird' | 'boxEntry' | 'shots'
+
 export interface ShotSideStats {
   on: number
   off: number
@@ -48,6 +50,7 @@ export interface MatchMeta {
   homeTeam: string
   awayTeam: string
   notes: string
+  collectorRole: StatRole
 }
 
 export interface Match {
