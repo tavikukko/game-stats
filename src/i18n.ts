@@ -20,6 +20,10 @@ export type I18nKey =
   | 'match.awayTeam'
   | 'match.notes'
   | 'match.create'
+  | 'match.selectGame'
+  | 'match.availableGames'
+  | 'match.noGames'
+  | 'match.selectRole'
   | 'match.notFound'
   | 'match.back'
   | 'match.backToList'
@@ -107,6 +111,10 @@ const translations: Record<Lang, Record<I18nKey, string>> = {
     'match.awayTeam': 'Vierasjoukkue',
     'match.notes': 'Lisämuistiinpano',
     'match.create': 'Luo ottelu',
+    'match.selectGame': 'Valitse ottelu',
+    'match.availableGames': 'Valitse peli listasta. Uudet pelit lisätään dataan JSON-tiedostossa.',
+    'match.noGames': 'Ei valittavia pelejä. Lisää pelejä dataan JSON-tiedostossa.',
+    'match.selectRole': 'Kerättävä tilasto',
     'match.notFound': 'Ottelua ei löytynyt.',
     'match.back': 'Takaisin',
     'match.backToList': 'Takaisin listaan',
@@ -185,6 +193,10 @@ const translations: Record<Lang, Record<I18nKey, string>> = {
     'match.awayTeam': 'Away team',
     'match.notes': 'Notes',
     'match.create': 'Create match',
+    'match.selectGame': 'Select match',
+    'match.availableGames': 'Pick a match from the list. Add new matches via the JSON data file.',
+    'match.noGames': 'No matches available. Add matches in the JSON data file.',
+    'match.selectRole': 'Stat to collect',
     'match.notFound': 'Match not found.',
     'match.back': 'Back',
     'match.backToList': 'Back to list',

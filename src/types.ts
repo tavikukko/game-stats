@@ -53,6 +53,15 @@ export interface MatchMeta {
   collectorRole: StatRole
 }
 
+export interface GameTemplate {
+  id: string
+  dateTime: string
+  location: string
+  homeTeam: string
+  awayTeam: string
+  notes: string
+}
+
 export interface Match {
   id: string
   createdAt: string

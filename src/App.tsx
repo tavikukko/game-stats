@@ -4,9 +4,10 @@ import { Link, Route, Routes, useNavigate, useParams } from 'react-router-dom'
 import Counter from './components/Counter'
 import SectionCard from './components/SectionCard'
 import { useStore } from './store'
-import type { HalfKey, HalfStats, Match, MatchMeta, StatRole } from './types'
+import type { GameTemplate, HalfKey, HalfStats, Match, MatchMeta, StatRole } from './types'
 import { buildMatchCsv, buildShareText, downloadFile } from './utils/export'
 import { getDefaultLang, LANGUAGE_KEY, t, type Lang } from './i18n'
+import gamesData from './data/games.json'
 
 const formatDate = (iso: string) => {
   if (!iso) return ''
@@ -185,24 +186,22 @@ const HomeScreen = ({
 const NewMatchScreen = ({ lang }: { lang: Lang }) => {
   const { createMatch, showToast } = useStore()
   const navigate = useNavigate()
-  const [form, setForm] = useState<MatchMeta>({
-    dateTime: '',
-    location: '',
-    homeTeam: '',
-    awayTeam: '',
-    notes: '',
-    collectorRole: 'passing',
-  })
+  const games = gamesData as GameTemplate[]
+  const [selectedGameId, setSelectedGameId] = useState<string>(games[0]?.id ?? '')
+  const [collectorRole, setCollectorRole] = useState<MatchMeta['collectorRole']>('passing')
 
-  const updateField = (key: keyof MatchMeta, value: string) => {
-    setForm((prev) => ({ ...prev, [key]: value }))
-  }
+  const selectedGame = games.find((game) => game.id === selectedGameId)
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
+    if (!selectedGame) return
     const id = createMatch({
-      ...form,
-      dateTime: form.dateTime || new Date().toISOString(),
+      dateTime: selectedGame.dateTime,
+      location: selectedGame.location,
+      homeTeam: selectedGame.homeTeam,
+      awayTeam: selectedGame.awayTeam,
+      notes: selectedGame.notes,
+      collectorRole,
     })
     showToast(t(lang, 'toast.created'), 'success')
     navigate(`/match/${id}`)
@@ -211,77 +210,54 @@ const NewMatchScreen = ({ lang }: { lang: Lang }) => {
   return (
     <>
       <header className="topbar">
-        <h1>{t(lang, 'match.newTitle')}</h1>
+        <h1>{t(lang, 'match.selectGame')}</h1>
         <Link className="btn ghost" to="/">
           {t(lang, 'match.back')}
         </Link>
       </header>
       <form className="container" onSubmit={handleSubmit}>
         <div className="card">
-          <div className="form-grid">
-            <label>
-              <span>{t(lang, 'match.dateTime')}</span>
-              <input
-                type="datetime-local"
-                value={form.dateTime}
-                onChange={(event) => updateField('dateTime', event.target.value)}
-              />
-            </label>
-            <label>
-              <span>{t(lang, 'match.location')}</span>
-              <input
-                type="text"
-                value={form.location}
-                onChange={(event) => updateField('location', event.target.value)}
-                placeholder={t(lang, 'match.location')}
-                required
-              />
-            </label>
-            <label>
-              <span>{t(lang, 'match.homeTeam')}</span>
-              <input
-                type="text"
-                value={form.homeTeam}
-                onChange={(event) => updateField('homeTeam', event.target.value)}
-                placeholder={t(lang, 'match.homeTeam')}
-                required
-              />
-            </label>
-            <label>
-              <span>{t(lang, 'match.awayTeam')}</span>
-              <input
-                type="text"
-                value={form.awayTeam}
-                onChange={(event) => updateField('awayTeam', event.target.value)}
-                placeholder={t(lang, 'match.awayTeam')}
-                required
-              />
-            </label>
-            <label>
-              <span>{t(lang, 'match.notes')}</span>
-              <textarea
-                value={form.notes}
-                onChange={(event) => updateField('notes', event.target.value)}
-                placeholder={t(lang, 'match.notes')}
-              />
-            </label>
-            <label>
-              <span>{t(lang, 'label.collectorRole')}</span>
-              <select
-                value={form.collectorRole}
-                onChange={(event) =>
-                  updateField('collectorRole', event.target.value as MatchMeta['collectorRole'])
-                }
-              >
-                <option value="passing">{t(lang, 'role.passing')}</option>
-                <option value="attackThird">{t(lang, 'role.attackThird')}</option>
-                <option value="boxEntry">{t(lang, 'role.boxEntry')}</option>
-                <option value="shots">{t(lang, 'role.shots')}</option>
-              </select>
-            </label>
-          </div>
+          <div className="helper">{t(lang, 'match.availableGames')}</div>
+          {games.length === 0 ? (
+            <div className="helper">{t(lang, 'match.noGames')}</div>
+          ) : (
+            <div className="match-list">
+              {games.map((game) => (
+                <label key={game.id} className="match-item">
+                  <input
+                    type="radio"
+                    name="game"
+                    value={game.id}
+                    checked={selectedGameId === game.id}
+                    onChange={() => setSelectedGameId(game.id)}
+                    style={{ marginBottom: '10px' }}
+                  />
+                  <h3>
+                    {game.homeTeam} – {game.awayTeam}
+                  </h3>
+                  <div className="match-meta">
+                    {formatDate(game.dateTime)} · {game.location}
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
-        <button type="submit" className="btn block">
+        <div className="card">
+          <label>
+            <span>{t(lang, 'match.selectRole')}</span>
+            <select
+              value={collectorRole}
+              onChange={(event) => setCollectorRole(event.target.value as MatchMeta['collectorRole'])}
+            >
+              <option value="passing">{t(lang, 'role.passing')}</option>
+              <option value="attackThird">{t(lang, 'role.attackThird')}</option>
+              <option value="boxEntry">{t(lang, 'role.boxEntry')}</option>
+              <option value="shots">{t(lang, 'role.shots')}</option>
+            </select>
+          </label>
+        </div>
+        <button type="submit" className="btn block" disabled={!selectedGame}>
           {t(lang, 'match.create')}
         </button>
       </form>

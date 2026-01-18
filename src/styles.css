@@ -212,6 +212,12 @@ a {
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+.match-item input[type='radio'] {
+  accent-color: var(--accent-2);
+  width: 22px;
+  height: 22px;
+}
+
 .match-item h3 {
   margin: 0;
   font-size: 1.1rem;
