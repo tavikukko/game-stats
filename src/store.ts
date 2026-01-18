@@ -29,11 +29,13 @@ type CounterPath =
 type ResetSection = 'passing' | 'attackThird' | 'boxEntry' | 'shots'
 
 type ToastKind = 'info' | 'success'
+type ToastKey = 'toast.saved'
 
 export interface Toast {
   id: number
   message: string
   kind: ToastKind
+  i18nKey?: ToastKey
 }
 
 interface StoreContextValue {
@@ -46,6 +48,7 @@ interface StoreContextValue {
   importMatches: (matches: Match[], mode: 'merge' | 'replace') => void
   toast: Toast | null
   showToast: (message: string, kind?: ToastKind) => void
+  showToastKey: (key: ToastKey, kind?: ToastKind) => void
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null)
@@ -140,6 +143,14 @@ export const StoreProvider = ({ children }: { children: React.ReactNode }) => {
     }, 1800)
   }, [])
 
+  const showToastKey = useCallback((key: ToastKey, kind: ToastKind = 'info') => {
+    const id = Date.now()
+    setToast({ id, message: '', kind, i18nKey: key })
+    globalThis.setTimeout(() => {
+      setToast((prev) => (prev?.id === id ? null : prev))
+    }, 1800)
+  }, [])
+
   // Debounced persistence on every change
   useEffect(() => {
     if (!hasLoaded.current) {
@@ -154,7 +165,7 @@ export const StoreProvider = ({ children }: { children: React.ReactNode }) => {
     saveTimer.current = globalThis.setTimeout(() => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
       if (Date.now() - lastSaveToast.current > 2000) {
-        showToast('Tallennettu')
+        showToastKey('toast.saved')
         lastSaveToast.current = Date.now()
       }
     }, 200)
@@ -164,7 +175,7 @@ export const StoreProvider = ({ children }: { children: React.ReactNode }) => {
         globalThis.clearTimeout(saveTimer.current)
       }
     }
-  }, [state, showToast])
+  }, [state, showToast, showToastKey])
 
   const updateMatch = useCallback(
     (id: string, updater: (match: Match) => void) => {
@@ -272,6 +283,7 @@ export const StoreProvider = ({ children }: { children: React.ReactNode }) => {
       importMatches,
       toast,
       showToast,
+      showToastKey,
     }),
     [
       state,
@@ -283,6 +295,7 @@ export const StoreProvider = ({ children }: { children: React.ReactNode }) => {
       importMatches,
       toast,
       showToast,
+      showToastKey,
     ],
   )
 

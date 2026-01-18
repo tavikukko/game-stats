@@ -1,4 +1,6 @@
 import type { HalfStats, Match } from '../types'
+import type { Lang } from '../i18n'
+import { t } from '../i18n'
 
 // Percentage helper
 const pct = (completed: number, attempts: number) =>
@@ -36,10 +38,11 @@ const sumHalfStats = (a: HalfStats, b: HalfStats): HalfStats => ({
 })
 
 // WhatsApp-friendly share text
-export const buildShareText = (match: Match) => {
+export const buildShareText = (match: Match, lang: Lang) => {
   const total = sumHalfStats(match.stats.first, match.stats.second)
   const header = `${match.meta.homeTeam} – ${match.meta.awayTeam}`
   const meta = `${match.meta.dateTime} • ${match.meta.location}`
+  const role = match.meta.collectorRole ?? 'passing'
 
   const halfBlock = (label: string, stats: HalfStats) => {
     const ownPct = pct(stats.passing.ownHalf.completed, stats.passing.ownHalf.attempts)
@@ -49,15 +52,35 @@ export const buildShareText = (match: Match) => {
     const shotsUsTotal = stats.shots.us.on + stats.shots.us.off
     const shotsOppTotal = stats.shots.opp.on + stats.shots.opp.off
 
-    return [
-      `${label}`,
-      `Syöttöpeli oma: ${stats.passing.ownHalf.completed}/${stats.passing.ownHalf.attempts} (${ownPct}%)`,
-      `Syöttöpeli vast: ${stats.passing.oppHalf.completed}/${stats.passing.oppHalf.attempts} (${oppPct}%)`,
-      `Hyökkäyskolmannes: syöttö ${stats.attackThird.pass}, kuljetus ${stats.attackThird.carry}, yht ${attackTotal}`,
-      `Boxiin: syöttö ${stats.boxEntry.pass}, kuljetus ${stats.boxEntry.carry}, yht ${boxTotal}`,
-      `Laukaukset me: kohti ${stats.shots.us.on}, ohi ${stats.shots.us.off}, yht ${shotsUsTotal}`,
-      `Laukaukset vast: kohti ${stats.shots.opp.on}, ohi ${stats.shots.opp.off}, yht ${shotsOppTotal}`,
-    ].join('\n')
+    const lines = [label]
+
+    if (role === 'passing') {
+      lines.push(
+        `${t(lang, 'share.passingOwn')}: ${stats.passing.ownHalf.completed}/${stats.passing.ownHalf.attempts} (${ownPct}%)`,
+        `${t(lang, 'share.passingOpp')}: ${stats.passing.oppHalf.completed}/${stats.passing.oppHalf.attempts} (${oppPct}%)`,
+      )
+    }
+
+    if (role === 'attackThird') {
+      lines.push(
+        `${t(lang, 'share.attackThird')}: ${t(lang, 'label.byPass').toLowerCase()} ${stats.attackThird.pass}, ${t(lang, 'label.byCarry').toLowerCase()} ${stats.attackThird.carry}, ${t(lang, 'summary.total').toLowerCase()} ${attackTotal}`,
+      )
+    }
+
+    if (role === 'boxEntry') {
+      lines.push(
+        `${t(lang, 'share.boxEntry')}: ${t(lang, 'label.byPass').toLowerCase()} ${stats.boxEntry.pass}, ${t(lang, 'label.byCarry').toLowerCase()} ${stats.boxEntry.carry}, ${t(lang, 'summary.total').toLowerCase()} ${boxTotal}`,
+      )
+    }
+
+    if (role === 'shots') {
+      lines.push(
+        `${t(lang, 'share.shotsUs')}: ${t(lang, 'label.onTarget').toLowerCase()} ${stats.shots.us.on}, ${t(lang, 'label.offTarget').toLowerCase()} ${stats.shots.us.off}, ${t(lang, 'summary.total').toLowerCase()} ${shotsUsTotal}`,
+        `${t(lang, 'share.shotsOpp')}: ${t(lang, 'label.onTarget').toLowerCase()} ${stats.shots.opp.on}, ${t(lang, 'label.offTarget').toLowerCase()} ${stats.shots.opp.off}, ${t(lang, 'summary.total').toLowerCase()} ${shotsOppTotal}`,
+      )
+    }
+
+    return lines.join('\n')
   }
 
   const blocks = [
@@ -65,11 +88,11 @@ export const buildShareText = (match: Match) => {
     meta,
     match.meta.notes ? `Muistiinpanot: ${match.meta.notes}` : '',
     '',
-    halfBlock('1PA', match.stats.first),
+    halfBlock(t(lang, 'share.half1'), match.stats.first),
     '',
-    halfBlock('2PA', match.stats.second),
+    halfBlock(t(lang, 'share.half2'), match.stats.second),
     '',
-    halfBlock('Yhteensä', total),
+    halfBlock(t(lang, 'share.total'), total),
   ].filter(Boolean)
 
   return blocks.join('\n')

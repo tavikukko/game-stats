@@ -3,9 +3,18 @@ interface CounterProps {
   value: number
   onIncrement: () => void
   onDecrement: () => void
+  incrementAriaLabel?: string
+  decrementAriaLabel?: string
 }
 
-const Counter = ({ label, value, onIncrement, onDecrement }: CounterProps) => {
+const Counter = ({
+  label,
+  value,
+  onIncrement,
+  onDecrement,
+  incrementAriaLabel,
+  decrementAriaLabel,
+}: CounterProps) => {
   return (
     <div className="counter">
       <div className="counter-label">{label}</div>
@@ -15,7 +24,7 @@ const Counter = ({ label, value, onIncrement, onDecrement }: CounterProps) => {
           className="btn counter-btn"
           onClick={onDecrement}
           disabled={value <= 0}
-          aria-label={`${label} miinus`}
+          aria-label={decrementAriaLabel ?? `${label} -`}
         >
           −
         </button>
@@ -26,7 +35,7 @@ const Counter = ({ label, value, onIncrement, onDecrement }: CounterProps) => {
           type="button"
           className="btn counter-btn"
           onClick={onIncrement}
-          aria-label={`${label} plus`}
+          aria-label={incrementAriaLabel ?? `${label} +`}
         >
           +
         </button>

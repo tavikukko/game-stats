@@ -3,12 +3,14 @@ import type { ReactNode } from 'react'
 interface SectionCardProps {
   title: string
   onReset: () => void
+  resetLabel: string
+  confirmText: (title: string) => string
   children: ReactNode
 }
 
-const SectionCard = ({ title, onReset, children }: SectionCardProps) => {
+const SectionCard = ({ title, onReset, resetLabel, confirmText, children }: SectionCardProps) => {
   const handleReset = () => {
-    const ok = window.confirm(`Nollataanko osio "${title}"?`)
+    const ok = globalThis.confirm(confirmText(title))
     if (ok) {
       onReset()
     }
@@ -19,7 +21,7 @@ const SectionCard = ({ title, onReset, children }: SectionCardProps) => {
       <div className="card-header">
         <h2>{title}</h2>
         <button type="button" className="btn ghost" onClick={handleReset}>
-          Reset osio
+          {resetLabel}
         </button>
       </div>
       <div className="card-body">{children}</div>

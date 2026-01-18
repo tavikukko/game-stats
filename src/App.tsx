@@ -6,6 +6,7 @@ import SectionCard from './components/SectionCard'
 import { useStore } from './store'
 import type { HalfKey, HalfStats, Match, MatchMeta, StatRole } from './types'
 import { buildMatchCsv, buildShareText, downloadFile, validateImportedMatches } from './utils/export'
+import { getDefaultLang, LANGUAGE_KEY, t, type Lang } from './i18n'
 
 const formatDate = (iso: string) => {
   if (!iso) return ''
@@ -23,12 +24,12 @@ const formatDate = (iso: string) => {
 const pct = (completed: number, attempts: number) =>
   attempts > 0 ? Math.round((completed / attempts) * 100) : 0
 
-const roleLabel: Record<StatRole, string> = {
-  passing: 'Syöttöpeli',
-  attackThird: 'Hyökkäyskolmannekselle pääsy',
-  boxEntry: 'Boxiin pääsy',
-  shots: 'Laukaukset',
-}
+const roleLabel = (lang: Lang): Record<StatRole, string> => ({
+  passing: t(lang, 'role.passing'),
+  attackThird: t(lang, 'role.attackThird'),
+  boxEntry: t(lang, 'role.boxEntry'),
+  shots: t(lang, 'role.shots'),
+})
 
 const sumHalfStats = (a: HalfStats, b: HalfStats): HalfStats => ({
   passing: {
@@ -63,22 +64,58 @@ const sumHalfStats = (a: HalfStats, b: HalfStats): HalfStats => ({
 
 const App = () => {
   const { toast } = useStore()
+  const [lang, setLang] = useState<Lang>(() => getDefaultLang())
+
+  const handleLang = (next: Lang) => {
+    setLang(next)
+    localStorage.setItem(LANGUAGE_KEY, next)
+  }
+
+  const toastMessage = toast?.i18nKey ? t(lang, toast.i18nKey) : toast?.message
   return (
     <div className="app">
       <Routes>
-        <Route path="/" element={<HomeScreen />} />
-        <Route path="/new" element={<NewMatchScreen />} />
-        <Route path="/match/:id" element={<MatchScreen />} />
-        <Route path="/summary/:id" element={<SummaryScreen />} />
+        <Route path="/" element={<HomeScreen lang={lang} onLangChange={handleLang} />} />
+        <Route path="/new" element={<NewMatchScreen lang={lang} />} />
+        <Route path="/match/:id" element={<MatchScreen lang={lang} />} />
+        <Route path="/summary/:id" element={<SummaryScreen lang={lang} />} />
       </Routes>
-      {toast && <div className="toast">{toast.message}</div>}
+      {toastMessage && <div className="toast">{toastMessage}</div>}
     </div>
   )
 }
 
-const HomeScreen = () => {
+const LangToggle = ({ lang, onChange }: { lang: Lang; onChange: (lang: Lang) => void }) => {
+  return (
+    <div className="segmented">
+      <button
+        type="button"
+        className={lang === 'fi' ? 'active' : ''}
+        onClick={() => onChange('fi')}
+      >
+        FI
+      </button>
+      <button
+        type="button"
+        className={lang === 'en' ? 'active' : ''}
+        onClick={() => onChange('en')}
+      >
+        EN
+      </button>
+    </div>
+  )
+}
+
+const HomeScreen = ({
+  lang,
+  onLangChange,
+}: {
+  lang: Lang
+  onLangChange: (lang: Lang) => void
+}) => {
   const { state, deleteMatch } = useStore()
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const labels = roleLabel(lang)
   const matches = useMemo(
     () =>
       [...state.matches].sort((a, b) =>
@@ -89,7 +126,7 @@ const HomeScreen = () => {
 
   const handleDelete = (match: Match) => {
     const ok = globalThis.confirm(
-      `Poistetaanko ottelu ${match.meta.homeTeam} – ${match.meta.awayTeam}?`,
+      t(lang, 'confirm.delete', { home: match.meta.homeTeam, away: match.meta.awayTeam }),
     )
     if (ok) {
       deleteMatch(match.id)
@@ -99,19 +136,22 @@ const HomeScreen = () => {
   return (
     <>
       <header className="topbar">
-        <h1>Otteluseuranta</h1>
-        <button type="button" className="btn ghost" onClick={() => setSettingsOpen(true)}>
-          ⚙️
-        </button>
+        <h1>{t(lang, 'app.title')}</h1>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <LangToggle lang={lang} onChange={onLangChange} />
+          <button type="button" className="btn ghost" onClick={() => setSettingsOpen(true)}>
+            ⚙️
+          </button>
+        </div>
       </header>
       <div className="container">
         <Link className="btn block" to="/new">
-          Uusi ottelu
+          {t(lang, 'home.newMatch')}
         </Link>
         <div className="match-list">
           {matches.length === 0 ? (
             <div className="card">
-              <div className="helper">Ei tallennettuja otteluita vielä.</div>
+              <div className="helper">{t(lang, 'home.noMatches')}</div>
             </div>
           ) : (
             matches.map((match) => (
@@ -122,17 +162,21 @@ const HomeScreen = () => {
                 <div className="match-meta">
                   {formatDate(match.meta.dateTime)} · {match.meta.location}
                 </div>
-                <div className="match-meta">Kerääjä: {roleLabel[match.meta.collectorRole]}</div>
-                <div className="match-meta">Päivitetty: {formatDate(match.updatedAt)}</div>
+                <div className="match-meta">
+                  {t(lang, 'home.collector')}: {labels[match.meta.collectorRole]}
+                </div>
+                <div className="match-meta">
+                  {t(lang, 'home.updated')}: {formatDate(match.updatedAt)}
+                </div>
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                   <Link className="btn secondary" to={`/match/${match.id}`}>
-                    Avaa
+                    {t(lang, 'home.open')}
                   </Link>
                   <Link className="btn ghost" to={`/summary/${match.id}`}>
-                    Yhteenveto
+                    {t(lang, 'home.summary')}
                   </Link>
                   <button type="button" className="btn danger" onClick={() => handleDelete(match)}>
-                    Poista
+                    {t(lang, 'home.delete')}
                   </button>
                 </div>
               </div>
@@ -140,12 +184,20 @@ const HomeScreen = () => {
           )}
         </div>
       </div>
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsModal lang={lang} open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </>
   )
 }
 
-const SettingsModal = ({ open, onClose }: { open: boolean; onClose: () => void }) => {
+const SettingsModal = ({
+  lang,
+  open,
+  onClose,
+}: {
+  lang: Lang
+  open: boolean
+  onClose: () => void
+}) => {
   const { state, importMatches, showToast } = useStore()
   const [isImporting, setIsImporting] = useState(false)
 
@@ -154,7 +206,7 @@ const SettingsModal = ({ open, onClose }: { open: boolean; onClose: () => void }
   const handleExportAll = () => {
     const payload = JSON.stringify(state.matches, null, 2)
     downloadFile('ottelut.json', payload, 'application/json')
-    showToast('Kaikki ottelut ladattu', 'success')
+    showToast(t(lang, 'settings.exportAll'), 'success')
   }
 
   const handleImport = async (file: File) => {
@@ -164,15 +216,15 @@ const SettingsModal = ({ open, onClose }: { open: boolean; onClose: () => void }
       const parsed = JSON.parse(text)
       const matches = validateImportedMatches(parsed)
       if (!matches) {
-        showToast('Virheellinen JSON-tiedosto')
+        showToast(t(lang, 'toast.importInvalid'))
         return
       }
-      const replace = globalThis.confirm('Korvataanko kaikki nykyiset ottelut?')
+      const replace = globalThis.confirm(t(lang, 'confirm.replaceAll'))
       importMatches(matches, replace ? 'replace' : 'merge')
-      showToast('Tuonti valmis', 'success')
+      showToast(t(lang, 'toast.importDone'), 'success')
       onClose()
     } catch {
-      showToast('Tuonti epäonnistui')
+      showToast(t(lang, 'toast.importFailed'))
     } finally {
       setIsImporting(false)
     }
@@ -188,12 +240,12 @@ const SettingsModal = ({ open, onClose }: { open: boolean; onClose: () => void }
       }}
     >
       <div className="modal">
-        <h2>Export / Import</h2>
+        <h2>{t(lang, 'settings.title')}</h2>
         <button type="button" className="btn block" onClick={handleExportAll}>
-          Vie kaikki ottelut JSON
+          {t(lang, 'settings.exportAll')}
         </button>
         <label className="btn secondary block" style={{ cursor: 'pointer' }}>
-          <span>Tuo JSON</span>
+          <span>{t(lang, 'settings.importJson')}</span>
           <input
             type="file"
             accept="application/json"
@@ -209,14 +261,14 @@ const SettingsModal = ({ open, onClose }: { open: boolean; onClose: () => void }
           />
         </label>
         <button type="button" className="btn ghost block" onClick={onClose}>
-          Sulje
+          {t(lang, 'settings.close')}
         </button>
       </div>
     </dialog>
   )
 }
 
-const NewMatchScreen = () => {
+const NewMatchScreen = ({ lang }: { lang: Lang }) => {
   const { createMatch, showToast } = useStore()
   const navigate = useNavigate()
   const [form, setForm] = useState<MatchMeta>({
@@ -238,23 +290,23 @@ const NewMatchScreen = () => {
       ...form,
       dateTime: form.dateTime || new Date().toISOString(),
     })
-    showToast('Ottelu luotu', 'success')
+    showToast(t(lang, 'toast.created'), 'success')
     navigate(`/match/${id}`)
   }
 
   return (
     <>
       <header className="topbar">
-        <h1>Uusi ottelu</h1>
+        <h1>{t(lang, 'match.newTitle')}</h1>
         <Link className="btn ghost" to="/">
-          Sulje
+          {t(lang, 'match.back')}
         </Link>
       </header>
       <form className="container" onSubmit={handleSubmit}>
         <div className="card">
           <div className="form-grid">
             <label>
-              <span>Päivä ja aika</span>
+              <span>{t(lang, 'match.dateTime')}</span>
               <input
                 type="datetime-local"
                 value={form.dateTime}
@@ -262,68 +314,68 @@ const NewMatchScreen = () => {
               />
             </label>
             <label>
-              <span>Paikka</span>
+              <span>{t(lang, 'match.location')}</span>
               <input
                 type="text"
                 value={form.location}
                 onChange={(event) => updateField('location', event.target.value)}
-                placeholder="Kenttä"
+                placeholder={t(lang, 'match.location')}
                 required
               />
             </label>
             <label>
-              <span>Kotijoukkue</span>
+              <span>{t(lang, 'match.homeTeam')}</span>
               <input
                 type="text"
                 value={form.homeTeam}
                 onChange={(event) => updateField('homeTeam', event.target.value)}
-                placeholder="Kotijoukkue"
+                placeholder={t(lang, 'match.homeTeam')}
                 required
               />
             </label>
             <label>
-              <span>Vierasjoukkue</span>
+              <span>{t(lang, 'match.awayTeam')}</span>
               <input
                 type="text"
                 value={form.awayTeam}
                 onChange={(event) => updateField('awayTeam', event.target.value)}
-                placeholder="Vierasjoukkue"
+                placeholder={t(lang, 'match.awayTeam')}
                 required
               />
             </label>
             <label>
-              <span>Lisämuistiinpano</span>
+              <span>{t(lang, 'match.notes')}</span>
               <textarea
                 value={form.notes}
                 onChange={(event) => updateField('notes', event.target.value)}
-                placeholder="Lisätiedot"
+                placeholder={t(lang, 'match.notes')}
               />
             </label>
             <label>
-              <span>Kerättävä tilasto</span>
+              <span>{t(lang, 'label.collectorRole')}</span>
               <select
                 value={form.collectorRole}
                 onChange={(event) =>
                   updateField('collectorRole', event.target.value as MatchMeta['collectorRole'])
                 }
               >
-                <option value="passing">Syöttöpeli</option>
-                <option value="attackThird">Hyökkäyskolmannekselle pääsy</option>
-                <option value="boxEntry">Boxiin pääsy</option>
-                <option value="shots">Laukaukset</option>
+                <option value="passing">{t(lang, 'role.passing')}</option>
+                <option value="attackThird">{t(lang, 'role.attackThird')}</option>
+                <option value="boxEntry">{t(lang, 'role.boxEntry')}</option>
+                <option value="shots">{t(lang, 'role.shots')}</option>
               </select>
             </label>
           </div>
         </div>
         <button type="submit" className="btn block">
-          Luo ottelu
+          {t(lang, 'match.create')}
         </button>
       </form>
     </>
   )
 }
 
-const MatchScreen = () => {
+const MatchScreen = ({ lang }: { lang: Lang }) => {
   const { id } = useParams()
   const { state, updateCounter, resetSection } = useStore()
   const [half, setHalf] = useState<HalfKey>('first')
@@ -332,9 +384,9 @@ const MatchScreen = () => {
   if (!match) {
     return (
       <div className="container">
-        <div className="card">Ottelua ei löytynyt.</div>
+        <div className="card">{t(lang, 'match.notFound')}</div>
         <Link className="btn" to="/">
-          Takaisin
+          {t(lang, 'match.back')}
         </Link>
       </div>
     )
@@ -364,48 +416,61 @@ const MatchScreen = () => {
             className={half === 'first' ? 'active' : ''}
             onClick={() => setHalf('first')}
           >
-            1PA
+            {t(lang, 'match.firstHalf')}
           </button>
           <button
             type="button"
             className={half === 'second' ? 'active' : ''}
             onClick={() => setHalf('second')}
           >
-            2PA
+            {t(lang, 'match.secondHalf')}
           </button>
         </div>
       </header>
       <div className="container">
         {role === 'passing' && (
-          <SectionCard title="Syöttöpeli" onReset={() => resetSection(match.id, half, 'passing')}>
+          <SectionCard
+            title={t(lang, 'role.passing')}
+            onReset={() => resetSection(match.id, half, 'passing')}
+            resetLabel={t(lang, 'action.trashReset')}
+            confirmText={(title) => t(lang, 'confirm.resetSection', { title })}
+          >
             <div className="subsection">
-              <h3>Oma puolisko</h3>
+              <h3>{t(lang, 'label.ownHalf')}</h3>
               <Counter
-                label="Yritykset"
+                label={t(lang, 'label.attempts')}
                 value={stats.passing.ownHalf.attempts}
                 onIncrement={() => updateCounter(match.id, half, 'passing.ownHalf.attempts', 1)}
                 onDecrement={() => updateCounter(match.id, half, 'passing.ownHalf.attempts', -1)}
+                incrementAriaLabel={`${t(lang, 'label.attempts')} +`}
+                decrementAriaLabel={`${t(lang, 'label.attempts')} -`}
               />
               <Counter
-                label="Onnistuneet"
+                label={t(lang, 'label.completed')}
                 value={stats.passing.ownHalf.completed}
                 onIncrement={() => updateCounter(match.id, half, 'passing.ownHalf.completed', 1)}
                 onDecrement={() => updateCounter(match.id, half, 'passing.ownHalf.completed', -1)}
+                incrementAriaLabel={`${t(lang, 'label.completed')} +`}
+                decrementAriaLabel={`${t(lang, 'label.completed')} -`}
               />
             </div>
             <div className="subsection">
-              <h3>Vastustajan puolisko</h3>
+              <h3>{t(lang, 'label.oppHalf')}</h3>
               <Counter
-                label="Yritykset"
+                label={t(lang, 'label.attempts')}
                 value={stats.passing.oppHalf.attempts}
                 onIncrement={() => updateCounter(match.id, half, 'passing.oppHalf.attempts', 1)}
                 onDecrement={() => updateCounter(match.id, half, 'passing.oppHalf.attempts', -1)}
+                incrementAriaLabel={`${t(lang, 'label.attempts')} +`}
+                decrementAriaLabel={`${t(lang, 'label.attempts')} -`}
               />
               <Counter
-                label="Onnistuneet"
+                label={t(lang, 'label.completed')}
                 value={stats.passing.oppHalf.completed}
                 onIncrement={() => updateCounter(match.id, half, 'passing.oppHalf.completed', 1)}
                 onDecrement={() => updateCounter(match.id, half, 'passing.oppHalf.completed', -1)}
+                incrementAriaLabel={`${t(lang, 'label.completed')} +`}
+                decrementAriaLabel={`${t(lang, 'label.completed')} -`}
               />
             </div>
           </SectionCard>
@@ -413,71 +478,99 @@ const MatchScreen = () => {
 
         {role === 'attackThird' && (
           <SectionCard
-            title="Hyökkäyskolmannekselle pääsy"
+            title={t(lang, 'role.attackThird')}
             onReset={() => resetSection(match.id, half, 'attackThird')}
+            resetLabel={t(lang, 'action.trashReset')}
+            confirmText={(title) => t(lang, 'confirm.resetSection', { title })}
           >
             <Counter
-              label="Syöttämällä"
+              label={t(lang, 'label.byPass')}
               value={stats.attackThird.pass}
               onIncrement={() => updateCounter(match.id, half, 'attackThird.pass', 1)}
               onDecrement={() => updateCounter(match.id, half, 'attackThird.pass', -1)}
+              incrementAriaLabel={`${t(lang, 'label.byPass')} +`}
+              decrementAriaLabel={`${t(lang, 'label.byPass')} -`}
             />
             <Counter
-              label="Kuljettamalla"
+              label={t(lang, 'label.byCarry')}
               value={stats.attackThird.carry}
               onIncrement={() => updateCounter(match.id, half, 'attackThird.carry', 1)}
               onDecrement={() => updateCounter(match.id, half, 'attackThird.carry', -1)}
+              incrementAriaLabel={`${t(lang, 'label.byCarry')} +`}
+              decrementAriaLabel={`${t(lang, 'label.byCarry')} -`}
             />
           </SectionCard>
         )}
 
         {role === 'boxEntry' && (
-          <SectionCard title="Boxiin pääsy" onReset={() => resetSection(match.id, half, 'boxEntry')}>
+          <SectionCard
+            title={t(lang, 'role.boxEntry')}
+            onReset={() => resetSection(match.id, half, 'boxEntry')}
+            resetLabel={t(lang, 'action.trashReset')}
+            confirmText={(title) => t(lang, 'confirm.resetSection', { title })}
+          >
             <Counter
-              label="Syöttämällä"
+              label={t(lang, 'label.byPass')}
               value={stats.boxEntry.pass}
               onIncrement={() => updateCounter(match.id, half, 'boxEntry.pass', 1)}
               onDecrement={() => updateCounter(match.id, half, 'boxEntry.pass', -1)}
+              incrementAriaLabel={`${t(lang, 'label.byPass')} +`}
+              decrementAriaLabel={`${t(lang, 'label.byPass')} -`}
             />
             <Counter
-              label="Kuljettamalla"
+              label={t(lang, 'label.byCarry')}
               value={stats.boxEntry.carry}
               onIncrement={() => updateCounter(match.id, half, 'boxEntry.carry', 1)}
               onDecrement={() => updateCounter(match.id, half, 'boxEntry.carry', -1)}
+              incrementAriaLabel={`${t(lang, 'label.byCarry')} +`}
+              decrementAriaLabel={`${t(lang, 'label.byCarry')} -`}
             />
           </SectionCard>
         )}
 
         {role === 'shots' && (
-          <SectionCard title="Laukaukset" onReset={() => resetSection(match.id, half, 'shots')}>
+          <SectionCard
+            title={t(lang, 'role.shots')}
+            onReset={() => resetSection(match.id, half, 'shots')}
+            resetLabel={t(lang, 'action.trashReset')}
+            confirmText={(title) => t(lang, 'confirm.resetSection', { title })}
+          >
             <div className="subsection">
-              <h3>Me</h3>
+              <h3>{t(lang, 'label.us')}</h3>
               <Counter
-                label="Kohti"
+                label={t(lang, 'label.onTarget')}
                 value={stats.shots.us.on}
                 onIncrement={() => updateCounter(match.id, half, 'shots.us.on', 1)}
                 onDecrement={() => updateCounter(match.id, half, 'shots.us.on', -1)}
+                incrementAriaLabel={`${t(lang, 'label.onTarget')} +`}
+                decrementAriaLabel={`${t(lang, 'label.onTarget')} -`}
               />
               <Counter
-                label="Ohi"
+                label={t(lang, 'label.offTarget')}
                 value={stats.shots.us.off}
                 onIncrement={() => updateCounter(match.id, half, 'shots.us.off', 1)}
                 onDecrement={() => updateCounter(match.id, half, 'shots.us.off', -1)}
+                incrementAriaLabel={`${t(lang, 'label.offTarget')} +`}
+                decrementAriaLabel={`${t(lang, 'label.offTarget')} -`}
               />
             </div>
             <div className="subsection">
-              <h3>Vastustaja</h3>
+              <h3>{t(lang, 'label.opp')}</h3>
               <Counter
-                label="Kohti"
+                label={t(lang, 'label.onTarget')}
                 value={stats.shots.opp.on}
                 onIncrement={() => updateCounter(match.id, half, 'shots.opp.on', 1)}
                 onDecrement={() => updateCounter(match.id, half, 'shots.opp.on', -1)}
+                incrementAriaLabel={`${t(lang, 'label.onTarget')} +`}
+                decrementAriaLabel={`${t(lang, 'label.onTarget')} -`}
               />
               <Counter
-                label="Ohi"
+                label={t(lang, 'label.offTarget')}
                 value={stats.shots.opp.off}
                 onIncrement={() => updateCounter(match.id, half, 'shots.opp.off', 1)}
                 onDecrement={() => updateCounter(match.id, half, 'shots.opp.off', -1)}
+                incrementAriaLabel={`${t(lang, 'label.offTarget')} +`}
+                decrementAriaLabel={`${t(lang, 'label.offTarget')} -`}
               />
             </div>
           </SectionCard>
@@ -487,7 +580,7 @@ const MatchScreen = () => {
           <div className="summary-grid">
             {role === 'passing' && (
               <div className="summary-row">
-                <span className="summary-label">Syöttö% (oma / vast)</span>
+                <span className="summary-label">{t(lang, 'label.passPct')}</span>
                 <strong>
                   {ownPct}% / {oppPct}%
                 </strong>
@@ -495,19 +588,19 @@ const MatchScreen = () => {
             )}
             {role === 'attackThird' && (
               <div className="summary-row">
-                <span className="summary-label">Hyökkäyskolmannes yhteensä</span>
+                <span className="summary-label">{t(lang, 'label.attackTotal')}</span>
                 <strong>{attackTotal}</strong>
               </div>
             )}
             {role === 'boxEntry' && (
               <div className="summary-row">
-                <span className="summary-label">Boxiin yhteensä</span>
+                <span className="summary-label">{t(lang, 'label.boxTotal')}</span>
                 <strong>{boxTotal}</strong>
               </div>
             )}
             {role === 'shots' && (
               <div className="summary-row">
-                <span className="summary-label">Laukaukset yhteensä (me / vast)</span>
+                <span className="summary-label">{t(lang, 'label.shotsTotal')}</span>
                 <strong>
                   {shotsUsTotal} / {shotsOppTotal}
                 </strong>
@@ -518,10 +611,10 @@ const MatchScreen = () => {
 
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <Link className="btn secondary" to="/">
-            Takaisin listaan
+            {t(lang, 'match.backToList')}
           </Link>
           <Link className="btn" to={`/summary/${match.id}`}>
-            Yhteenveto & jako
+            {t(lang, 'match.summary')}
           </Link>
         </div>
       </div>
@@ -529,7 +622,7 @@ const MatchScreen = () => {
   )
 }
 
-const SummaryScreen = () => {
+const SummaryScreen = ({ lang }: { lang: Lang }) => {
   const { id } = useParams()
   const { state, showToast } = useStore()
   const match = state.matches.find((item) => item.id === id)
@@ -537,23 +630,24 @@ const SummaryScreen = () => {
   if (!match) {
     return (
       <div className="container">
-        <div className="card">Ottelua ei löytynyt.</div>
+        <div className="card">{t(lang, 'match.notFound')}</div>
         <Link className="btn" to="/">
-          Takaisin
+          {t(lang, 'match.back')}
         </Link>
       </div>
     )
   }
 
   const total = sumHalfStats(match.stats.first, match.stats.second)
-  const shareText = buildShareText(match)
+  const role = match.meta.collectorRole ?? 'passing'
+  const shareText = buildShareText(match, lang)
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(shareText)
-      showToast('Kopioitu leikepöydälle', 'success')
+      showToast(t(lang, 'toast.copied'), 'success')
     } catch {
-      showToast('Kopiointi epäonnistui')
+      showToast(t(lang, 'toast.importFailed'))
     }
   }
 
@@ -561,7 +655,7 @@ const SummaryScreen = () => {
     if ('share' in navigator) {
       try {
         await navigator.share({ text: shareText })
-        showToast('Jaettu', 'success')
+        showToast(t(lang, 'toast.shared'), 'success')
         return
       } catch {
         // fall back to copy
@@ -573,26 +667,26 @@ const SummaryScreen = () => {
   return (
     <>
       <header className="topbar">
-        <h1>Yhteenveto</h1>
+        <h1>{t(lang, 'summary.title')}</h1>
         <Link className="btn ghost" to={`/match/${match.id}`}>
-          Takaisin
+          {t(lang, 'match.back')}
         </Link>
       </header>
       <div className="container">
-        <SummaryBlock label="1. puoliaika" stats={match.stats.first} />
-        <SummaryBlock label="2. puoliaika" stats={match.stats.second} />
-        <SummaryBlock label="Yhteensä" stats={total} />
+        <SummaryBlock label={t(lang, 'match.firstHalf')} stats={match.stats.first} role={role} lang={lang} />
+        <SummaryBlock label={t(lang, 'match.secondHalf')} stats={match.stats.second} role={role} lang={lang} />
+        <SummaryBlock label={t(lang, 'summary.total')} stats={total} role={role} lang={lang} />
 
         <div className="card">
           <div className="summary-row">
-            <span className="summary-label">Jaa tekstinä</span>
+            <span className="summary-label">{t(lang, 'summary.shareText')}</span>
           </div>
           <textarea value={shareText} readOnly />
           <button type="button" className="btn block" onClick={handleCopy}>
-            Kopioi leikepöydälle
+            {t(lang, 'summary.copy')}
           </button>
           <button type="button" className="btn secondary block" onClick={handleShare}>
-            Jaa…
+            {t(lang, 'summary.share')}
           </button>
         </div>
 
@@ -608,7 +702,7 @@ const SummaryScreen = () => {
               )
             }
           >
-            Lataa JSON
+            {t(lang, 'summary.downloadJson')}
           </button>
           <button
             type="button"
@@ -617,7 +711,7 @@ const SummaryScreen = () => {
               downloadFile(`ottelu-${match.id}.csv`, buildMatchCsv(match), 'text/csv')
             }
           >
-            Lataa CSV
+            {t(lang, 'summary.downloadCsv')}
           </button>
         </div>
       </div>
@@ -625,7 +719,17 @@ const SummaryScreen = () => {
   )
 }
 
-const SummaryBlock = ({ label, stats }: { label: string; stats: HalfStats }) => {
+const SummaryBlock = ({
+  label,
+  stats,
+  role,
+  lang,
+}: {
+  label: string
+  stats: HalfStats
+  role: StatRole
+  lang: Lang
+}) => {
   const ownPct = pct(stats.passing.ownHalf.completed, stats.passing.ownHalf.attempts)
   const oppPct = pct(stats.passing.oppHalf.completed, stats.passing.oppHalf.attempts)
   const attackTotal = stats.attackThird.pass + stats.attackThird.carry
@@ -637,42 +741,54 @@ const SummaryBlock = ({ label, stats }: { label: string; stats: HalfStats }) => 
     <div className="card">
       <h2>{label}</h2>
       <div className="summary-grid">
-        <div className="summary-row">
-          <span className="summary-label">Syöttöpeli oma</span>
-          <strong>
-            {stats.passing.ownHalf.completed}/{stats.passing.ownHalf.attempts} ({ownPct}%)
-          </strong>
-        </div>
-        <div className="summary-row">
-          <span className="summary-label">Syöttöpeli vast</span>
-          <strong>
-            {stats.passing.oppHalf.completed}/{stats.passing.oppHalf.attempts} ({oppPct}%)
-          </strong>
-        </div>
-        <div className="summary-row">
-          <span className="summary-label">Hyökkäyskolmannes</span>
-          <strong>
-            Syöttö {stats.attackThird.pass}, kuljetus {stats.attackThird.carry}, yht {attackTotal}
-          </strong>
-        </div>
-        <div className="summary-row">
-          <span className="summary-label">Boxiin</span>
-          <strong>
-            Syöttö {stats.boxEntry.pass}, kuljetus {stats.boxEntry.carry}, yht {boxTotal}
-          </strong>
-        </div>
-        <div className="summary-row">
-          <span className="summary-label">Laukaukset me</span>
-          <strong>
-            Kohti {stats.shots.us.on}, ohi {stats.shots.us.off}, yht {shotsUsTotal}
-          </strong>
-        </div>
-        <div className="summary-row">
-          <span className="summary-label">Laukaukset vast</span>
-          <strong>
-            Kohti {stats.shots.opp.on}, ohi {stats.shots.opp.off}, yht {shotsOppTotal}
-          </strong>
-        </div>
+        {role === 'passing' && (
+          <>
+            <div className="summary-row">
+              <span className="summary-label">{t(lang, 'share.passingOwn')}</span>
+              <strong>
+                {stats.passing.ownHalf.completed}/{stats.passing.ownHalf.attempts} ({ownPct}%)
+              </strong>
+            </div>
+            <div className="summary-row">
+              <span className="summary-label">{t(lang, 'share.passingOpp')}</span>
+              <strong>
+                {stats.passing.oppHalf.completed}/{stats.passing.oppHalf.attempts} ({oppPct}%)
+              </strong>
+            </div>
+          </>
+        )}
+        {role === 'attackThird' && (
+          <div className="summary-row">
+            <span className="summary-label">{t(lang, 'share.attackThird')}</span>
+            <strong>
+              Syöttö {stats.attackThird.pass}, kuljetus {stats.attackThird.carry}, yht {attackTotal}
+            </strong>
+          </div>
+        )}
+        {role === 'boxEntry' && (
+          <div className="summary-row">
+            <span className="summary-label">{t(lang, 'share.boxEntry')}</span>
+            <strong>
+              Syöttö {stats.boxEntry.pass}, kuljetus {stats.boxEntry.carry}, yht {boxTotal}
+            </strong>
+          </div>
+        )}
+        {role === 'shots' && (
+          <>
+            <div className="summary-row">
+              <span className="summary-label">{t(lang, 'share.shotsUs')}</span>
+              <strong>
+                Kohti {stats.shots.us.on}, ohi {stats.shots.us.off}, yht {shotsUsTotal}
+              </strong>
+            </div>
+            <div className="summary-row">
+              <span className="summary-label">{t(lang, 'share.shotsOpp')}</span>
+              <strong>
+                Kohti {stats.shots.opp.on}, ohi {stats.shots.opp.off}, yht {shotsOppTotal}
+              </strong>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
