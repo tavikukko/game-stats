@@ -191,6 +191,10 @@ a {
 .counter-btn {
   font-size: 1.8rem;
   min-height: var(--touch);
+  width: var(--touch);
+  height: var(--touch);
+  border-radius: 50%;
+  padding: 0;
 }
 
 .match-list {
