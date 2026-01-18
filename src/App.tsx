@@ -5,7 +5,7 @@ import Counter from './components/Counter'
 import SectionCard from './components/SectionCard'
 import { useStore } from './store'
 import type { HalfKey, HalfStats, Match, MatchMeta, StatRole } from './types'
-import { buildMatchCsv, buildShareText, downloadFile, validateImportedMatches } from './utils/export'
+import { buildMatchCsv, buildShareText, downloadFile } from './utils/export'
 import { getDefaultLang, LANGUAGE_KEY, t, type Lang } from './i18n'
 
 const formatDate = (iso: string) => {
@@ -114,7 +114,6 @@ const HomeScreen = ({
   onLangChange: (lang: Lang) => void
 }) => {
   const { state, deleteMatch } = useStore()
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const labels = roleLabel(lang)
   const matches = useMemo(
     () =>
@@ -137,12 +136,7 @@ const HomeScreen = ({
     <>
       <header className="topbar">
         <h1>{t(lang, 'app.title')}</h1>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <LangToggle lang={lang} onChange={onLangChange} />
-          <button type="button" className="btn ghost" onClick={() => setSettingsOpen(true)}>
-            ⚙️
-          </button>
-        </div>
+        <LangToggle lang={lang} onChange={onLangChange} />
       </header>
       <div className="container">
         <Link className="btn block" to="/new">
@@ -184,87 +178,7 @@ const HomeScreen = ({
           )}
         </div>
       </div>
-      <SettingsModal lang={lang} open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </>
-  )
-}
-
-const SettingsModal = ({
-  lang,
-  open,
-  onClose,
-}: {
-  lang: Lang
-  open: boolean
-  onClose: () => void
-}) => {
-  const { state, importMatches, showToast } = useStore()
-  const [isImporting, setIsImporting] = useState(false)
-
-  if (!open) return null
-
-  const handleExportAll = () => {
-    const payload = JSON.stringify(state.matches, null, 2)
-    downloadFile('ottelut.json', payload, 'application/json')
-    showToast(t(lang, 'settings.exportAll'), 'success')
-  }
-
-  const handleImport = async (file: File) => {
-    setIsImporting(true)
-    try {
-      const text = await file.text()
-      const parsed = JSON.parse(text)
-      const matches = validateImportedMatches(parsed)
-      if (!matches) {
-        showToast(t(lang, 'toast.importInvalid'))
-        return
-      }
-      const replace = globalThis.confirm(t(lang, 'confirm.replaceAll'))
-      importMatches(matches, replace ? 'replace' : 'merge')
-      showToast(t(lang, 'toast.importDone'), 'success')
-      onClose()
-    } catch {
-      showToast(t(lang, 'toast.importFailed'))
-    } finally {
-      setIsImporting(false)
-    }
-  }
-
-  return (
-    <dialog
-      open
-      className="modal-backdrop"
-      onCancel={(event) => {
-        event.preventDefault()
-        onClose()
-      }}
-    >
-      <div className="modal">
-        <h2>{t(lang, 'settings.title')}</h2>
-        <button type="button" className="btn block" onClick={handleExportAll}>
-          {t(lang, 'settings.exportAll')}
-        </button>
-        <label className="btn secondary block" style={{ cursor: 'pointer' }}>
-          <span>{t(lang, 'settings.importJson')}</span>
-          <input
-            type="file"
-            accept="application/json"
-            style={{ display: 'none' }}
-            disabled={isImporting}
-            onChange={(event) => {
-              const file = event.target.files?.[0]
-              if (file) {
-                void handleImport(file)
-              }
-              event.currentTarget.value = ''
-            }}
-          />
-        </label>
-        <button type="button" className="btn ghost block" onClick={onClose}>
-          {t(lang, 'settings.close')}
-        </button>
-      </div>
-    </dialog>
   )
 }
 
