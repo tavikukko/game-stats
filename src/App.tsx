@@ -1,36 +1,46 @@
-import type { FormEvent } from 'react'
-import { useMemo, useState } from 'react'
-import { Link, Route, Routes, useNavigate, useParams } from 'react-router-dom'
-import Counter from './components/Counter'
-import SectionCard from './components/SectionCard'
-import { useStore } from './store'
-import type { GameTemplate, HalfKey, HalfStats, Match, MatchMeta, StatRole } from './types'
-import { buildMatchCsv, buildShareText, downloadFile } from './utils/export'
+import { useState } from 'react'
 import { getDefaultLang, LANGUAGE_KEY, t, type Lang } from './i18n'
-import gamesData from './data/games.json'
+import type { StatRole, HalfKey, HalfStats, SessionData } from './types'
 
-const formatDate = (iso: string) => {
-  if (!iso) return ''
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  return date.toLocaleString('fi-FI', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+const SESSION_KEY = 'game-stats:session'
+
+const emptyHalf = (): HalfStats => ({
+  passing: {
+    ownHalf: { attempts: 0, completed: 0 },
+    oppHalf: { attempts: 0, completed: 0 },
+  },
+  attackThird: { pass: 0, carry: 0 },
+  boxEntry: { pass: 0, carry: 0 },
+  shots: {
+    us: { on: 0, off: 0 },
+    opp: { on: 0, off: 0 },
+  },
+})
+
+const createSession = (role: StatRole): SessionData => ({
+  role,
+  first: emptyHalf(),
+  second: emptyHalf(),
+  createdAt: new Date().toISOString(),
+})
+
+const loadSession = (): SessionData | null => {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as SessionData
+  } catch {
+    return null
+  }
 }
 
-const pct = (completed: number, attempts: number) =>
-  attempts > 0 ? Math.round((completed / attempts) * 100) : 0
+const saveSession = (session: SessionData) => {
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session))
+}
 
-const roleLabel = (lang: Lang): Record<StatRole, string> => ({
-  passing: t(lang, 'role.passing'),
-  attackThird: t(lang, 'role.attackThird'),
-  boxEntry: t(lang, 'role.boxEntry'),
-  shots: t(lang, 'role.shots'),
-})
+const clearSession = () => {
+  localStorage.removeItem(SESSION_KEY)
+}
 
 const sumHalfStats = (a: HalfStats, b: HalfStats): HalfStats => ({
   passing: {
@@ -63,75 +73,109 @@ const sumHalfStats = (a: HalfStats, b: HalfStats): HalfStats => ({
   },
 })
 
+const pct = (completed: number, attempts: number) =>
+  attempts > 0 ? Math.round((completed / attempts) * 100) : 0
+
+type Screen = 'home' | 'collect' | 'export'
+
 const App = () => {
-  const { toast } = useStore()
   const [lang, setLang] = useState<Lang>(() => getDefaultLang())
+  const [screen, setScreen] = useState<Screen>(() => (loadSession() ? 'collect' : 'home'))
+  const [session, setSession] = useState<SessionData | null>(() => loadSession())
+  const [toast, setToast] = useState<string | null>(null)
 
   const handleLang = (next: Lang) => {
     setLang(next)
     localStorage.setItem(LANGUAGE_KEY, next)
   }
 
-  const toastMessage = toast?.i18nKey ? t(lang, toast.i18nKey) : toast?.message
+  const showToast = (msg: string) => {
+    setToast(msg)
+    setTimeout(() => setToast(null), 1800)
+  }
+
+  const handleStartSession = (role: StatRole) => {
+    const newSession = createSession(role)
+    setSession(newSession)
+    saveSession(newSession)
+    setScreen('collect')
+  }
+
+  const handleUpdateSession = (updated: SessionData) => {
+    setSession(updated)
+    saveSession(updated)
+  }
+
+  const handleFinish = () => {
+    setScreen('export')
+  }
+
+  const handleNewSession = () => {
+    if (globalThis.confirm(t(lang, 'confirm.newSession'))) {
+      clearSession()
+      setSession(null)
+      setScreen('home')
+    }
+  }
+
+  const handleBack = () => {
+    setScreen('collect')
+  }
+
   return (
     <div className="app">
-      <Routes>
-        <Route path="/" element={<HomeScreen lang={lang} onLangChange={handleLang} />} />
-        <Route path="/new" element={<NewMatchScreen lang={lang} />} />
-        <Route path="/match/:id" element={<MatchScreen lang={lang} />} />
-        <Route path="/summary/:id" element={<SummaryScreen lang={lang} />} />
-      </Routes>
-      {toastMessage && <div className="toast">{toastMessage}</div>}
+      {screen === 'home' && (
+        <HomeScreen lang={lang} onLangChange={handleLang} onStart={handleStartSession} />
+      )}
+      {screen === 'collect' && session && (
+        <CollectScreen
+          lang={lang}
+          session={session}
+          onUpdate={handleUpdateSession}
+          onFinish={handleFinish}
+          onNew={handleNewSession}
+        />
+      )}
+      {screen === 'export' && session && (
+        <ExportScreen
+          lang={lang}
+          session={session}
+          onBack={handleBack}
+          onNew={handleNewSession}
+          showToast={showToast}
+        />
+      )}
+      {toast && <div className="toast">{toast}</div>}
     </div>
   )
 }
 
-const LangToggle = ({ lang, onChange }: { lang: Lang; onChange: (lang: Lang) => void }) => {
-  return (
-    <div className="segmented">
-      <button
-        type="button"
-        className={lang === 'fi' ? 'active' : ''}
-        onClick={() => onChange('fi')}
-      >
-        FI
-      </button>
-      <button
-        type="button"
-        className={lang === 'en' ? 'active' : ''}
-        onClick={() => onChange('en')}
-      >
-        EN
-      </button>
-    </div>
-  )
-}
+const LangToggle = ({ lang, onChange }: { lang: Lang; onChange: (lang: Lang) => void }) => (
+  <div className="lang-toggle">
+    <button type="button" className={lang === 'fi' ? 'active' : ''} onClick={() => onChange('fi')}>
+      FI
+    </button>
+    <button type="button" className={lang === 'en' ? 'active' : ''} onClick={() => onChange('en')}>
+      EN
+    </button>
+  </div>
+)
 
 const HomeScreen = ({
   lang,
   onLangChange,
+  onStart,
 }: {
   lang: Lang
   onLangChange: (lang: Lang) => void
+  onStart: (role: StatRole) => void
 }) => {
-  const { state, deleteMatch } = useStore()
-  const labels = roleLabel(lang)
-  const matches = useMemo(
-    () =>
-      [...state.matches].sort((a, b) =>
-        (b.updatedAt || b.createdAt).localeCompare(a.updatedAt || a.createdAt),
-      ),
-    [state.matches],
-  )
-
-  const handleDelete = (match: Match) => {
-    const ok = globalThis.confirm(
-      t(lang, 'confirm.delete', { home: match.meta.homeTeam, away: match.meta.awayTeam }),
-    )
-    if (ok) {
-      deleteMatch(match.id)
-    }
-  }
+  const roles: { role: StatRole; emoji: string }[] = [
+    { role: 'passing', emoji: '⚽' },
+    { role: 'attackThird', emoji: '🎯' },
+    { role: 'boxEntry', emoji: '📦' },
+    { role: 'shots', emoji: '🥅' },
+  ]
 
   return (
     <>
@@ -139,168 +183,70 @@ const HomeScreen = ({
         <h1>{t(lang, 'app.title')}</h1>
         <LangToggle lang={lang} onChange={onLangChange} />
       </header>
-      <div className="container">
-        <Link className="btn block" to="/new">
-          {t(lang, 'home.newMatch')}
-        </Link>
-        <div className="match-list">
-          {matches.length === 0 ? (
-            <div className="card">
-              <div className="helper">{t(lang, 'home.noMatches')}</div>
-            </div>
-          ) : (
-            matches.map((match) => (
-              <div key={match.id} className="match-item">
-                <h3>
-                  {match.meta.homeTeam} – {match.meta.awayTeam}
-                </h3>
-                <div className="match-meta">
-                  {formatDate(match.meta.dateTime)} · {match.meta.location}
-                </div>
-                <div className="match-meta">
-                  {t(lang, 'home.collector')}: {labels[match.meta.collectorRole]}
-                </div>
-                <div className="match-meta">
-                  {t(lang, 'home.updated')}: {formatDate(match.updatedAt)}
-                </div>
-                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                  <Link className="btn secondary" to={`/match/${match.id}`}>
-                    {t(lang, 'home.open')}
-                  </Link>
-                  <Link className="btn ghost" to={`/summary/${match.id}`}>
-                    {t(lang, 'home.summary')}
-                  </Link>
-                  <button type="button" className="btn danger" onClick={() => handleDelete(match)}>
-                    {t(lang, 'home.delete')}
-                  </button>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </>
-  )
-}
-
-const NewMatchScreen = ({ lang }: { lang: Lang }) => {
-  const { createMatch, showToast } = useStore()
-  const navigate = useNavigate()
-  const games = gamesData as GameTemplate[]
-  const [selectedGameId, setSelectedGameId] = useState<string>(games[0]?.id ?? '')
-  const [collectorRole, setCollectorRole] = useState<MatchMeta['collectorRole']>('passing')
-
-  const selectedGame = games.find((game) => game.id === selectedGameId)
-
-  const handleSubmit = (event: FormEvent) => {
-    event.preventDefault()
-    if (!selectedGame) return
-    const id = createMatch({
-      dateTime: selectedGame.dateTime,
-      location: selectedGame.location,
-      homeTeam: selectedGame.homeTeam,
-      awayTeam: selectedGame.awayTeam,
-      notes: selectedGame.notes,
-      collectorRole,
-    })
-    showToast(t(lang, 'toast.created'), 'success')
-    navigate(`/match/${id}`)
-  }
-
-  return (
-    <>
-      <header className="topbar">
-        <h1>{t(lang, 'match.selectGame')}</h1>
-        <Link className="btn ghost" to="/">
-          {t(lang, 'match.back')}
-        </Link>
-      </header>
-      <form className="container" onSubmit={handleSubmit}>
-        <div className="card">
-          <div className="helper">{t(lang, 'match.availableGames')}</div>
-          {games.length === 0 ? (
-            <div className="helper">{t(lang, 'match.noGames')}</div>
-          ) : (
-            <div className="match-list">
-              {games.map((game) => (
-                <label key={game.id} className="match-item">
-                  <input
-                    type="radio"
-                    name="game"
-                    value={game.id}
-                    checked={selectedGameId === game.id}
-                    onChange={() => setSelectedGameId(game.id)}
-                    style={{ marginBottom: '10px' }}
-                  />
-                  <h3>
-                    {game.homeTeam} – {game.awayTeam}
-                  </h3>
-                  <div className="match-meta">
-                    {formatDate(game.dateTime)} · {game.location}
-                  </div>
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="card">
-          <label>
-            <span>{t(lang, 'match.selectRole')}</span>
-            <select
-              value={collectorRole}
-              onChange={(event) => setCollectorRole(event.target.value as MatchMeta['collectorRole'])}
+      <div className="container home-container">
+        <p className="subtitle">{t(lang, 'home.selectStat')}</p>
+        <div className="role-grid">
+          {roles.map(({ role, emoji }) => (
+            <button
+              key={role}
+              type="button"
+              className="role-btn"
+              onClick={() => onStart(role)}
             >
-              <option value="passing">{t(lang, 'role.passing')}</option>
-              <option value="attackThird">{t(lang, 'role.attackThird')}</option>
-              <option value="boxEntry">{t(lang, 'role.boxEntry')}</option>
-              <option value="shots">{t(lang, 'role.shots')}</option>
-            </select>
-          </label>
+              <span className="role-emoji">{emoji}</span>
+              <span className="role-label">{t(lang, `role.${role}` as const)}</span>
+            </button>
+          ))}
         </div>
-        <button type="submit" className="btn block" disabled={!selectedGame}>
-          {t(lang, 'match.create')}
-        </button>
-      </form>
+      </div>
     </>
   )
 }
 
-const MatchScreen = ({ lang }: { lang: Lang }) => {
-  const { id } = useParams()
-  const { state, updateCounter, resetSection } = useStore()
+const CollectScreen = ({
+  lang,
+  session,
+  onUpdate,
+  onFinish,
+  onNew,
+}: {
+  lang: Lang
+  session: SessionData
+  onUpdate: (s: SessionData) => void
+  onFinish: () => void
+  onNew: () => void
+}) => {
   const [half, setHalf] = useState<HalfKey>('first')
-  const match = state.matches.find((item) => item.id === id)
+  const stats = session[half]
+  const role = session.role
 
-  if (!match) {
-    return (
-      <div className="container">
-        <div className="card">{t(lang, 'match.notFound')}</div>
-        <Link className="btn" to="/">
-          {t(lang, 'match.back')}
-        </Link>
-      </div>
-    )
+  const update = (path: string, delta: number) => {
+    const clone = JSON.parse(JSON.stringify(session)) as SessionData
+    const parts = path.split('.')
+    let obj: Record<string, unknown> = clone[half] as unknown as Record<string, unknown>
+    for (let i = 0; i < parts.length - 1; i++) {
+      obj = obj[parts[i]] as Record<string, unknown>
+    }
+    const key = parts[parts.length - 1]
+    const current = obj[key] as number
+    obj[key] = Math.max(0, current + delta)
+    onUpdate(clone)
   }
 
-  const stats = match.stats[half]
-  const role = match.meta.collectorRole ?? 'passing'
-  const ownPct = pct(stats.passing.ownHalf.completed, stats.passing.ownHalf.attempts)
-  const oppPct = pct(stats.passing.oppHalf.completed, stats.passing.oppHalf.attempts)
-  const attackTotal = stats.attackThird.pass + stats.attackThird.carry
-  const boxTotal = stats.boxEntry.pass + stats.boxEntry.carry
-  const shotsUsTotal = stats.shots.us.on + stats.shots.us.off
-  const shotsOppTotal = stats.shots.opp.on + stats.shots.opp.off
+  const resetCurrent = () => {
+    if (!globalThis.confirm(t(lang, 'confirm.resetHalf'))) return
+    const clone = JSON.parse(JSON.stringify(session)) as SessionData
+    clone[half] = emptyHalf()
+    onUpdate(clone)
+  }
 
   return (
     <>
       <header className="topbar">
-        <div>
-          <h1>
-            {match.meta.homeTeam} – {match.meta.awayTeam}
-          </h1>
-          <div className="match-meta">{formatDate(match.meta.dateTime)}</div>
+        <div className="topbar-left">
+          <h1>{t(lang, `role.${role}` as const)}</h1>
         </div>
-        <div className="segmented">
+        <div className="half-toggle">
           <button
             type="button"
             className={half === 'first' ? 'active' : ''}
@@ -317,235 +263,251 @@ const MatchScreen = ({ lang }: { lang: Lang }) => {
           </button>
         </div>
       </header>
-      <div className="container">
+      <div className="container collect-container">
         {role === 'passing' && (
-          <SectionCard
-            title={t(lang, 'role.passing')}
-            onReset={() => resetSection(match.id, half, 'passing')}
-            resetLabel={t(lang, 'action.trashReset')}
-            confirmText={(title) => t(lang, 'confirm.resetSection', { title })}
-          >
-            <div className="subsection">
+          <>
+            <div className="stat-section">
               <h3>{t(lang, 'label.ownHalf')}</h3>
-              <Counter
-                label={t(lang, 'label.attempts')}
-                value={stats.passing.ownHalf.attempts}
-                onIncrement={() => updateCounter(match.id, half, 'passing.ownHalf.attempts', 1)}
-                onDecrement={() => updateCounter(match.id, half, 'passing.ownHalf.attempts', -1)}
-                incrementAriaLabel={`${t(lang, 'label.attempts')} +`}
-                decrementAriaLabel={`${t(lang, 'label.attempts')} -`}
-              />
-              <Counter
-                label={t(lang, 'label.completed')}
-                value={stats.passing.ownHalf.completed}
-                onIncrement={() => updateCounter(match.id, half, 'passing.ownHalf.completed', 1)}
-                onDecrement={() => updateCounter(match.id, half, 'passing.ownHalf.completed', -1)}
-                incrementAriaLabel={`${t(lang, 'label.completed')} +`}
-                decrementAriaLabel={`${t(lang, 'label.completed')} -`}
-              />
+              <div className="stat-row">
+                <StatCounter
+                  label={t(lang, 'label.attempts')}
+                  value={stats.passing.ownHalf.attempts}
+                  onIncrement={() => update('passing.ownHalf.attempts', 1)}
+                  onDecrement={() => update('passing.ownHalf.attempts', -1)}
+                />
+                <StatCounter
+                  label={t(lang, 'label.completed')}
+                  value={stats.passing.ownHalf.completed}
+                  onIncrement={() => update('passing.ownHalf.completed', 1)}
+                  onDecrement={() => update('passing.ownHalf.completed', -1)}
+                />
+              </div>
+              <div className="stat-pct">
+                {pct(stats.passing.ownHalf.completed, stats.passing.ownHalf.attempts)}%
+              </div>
             </div>
-            <div className="subsection">
+            <div className="stat-section">
               <h3>{t(lang, 'label.oppHalf')}</h3>
-              <Counter
-                label={t(lang, 'label.attempts')}
-                value={stats.passing.oppHalf.attempts}
-                onIncrement={() => updateCounter(match.id, half, 'passing.oppHalf.attempts', 1)}
-                onDecrement={() => updateCounter(match.id, half, 'passing.oppHalf.attempts', -1)}
-                incrementAriaLabel={`${t(lang, 'label.attempts')} +`}
-                decrementAriaLabel={`${t(lang, 'label.attempts')} -`}
-              />
-              <Counter
-                label={t(lang, 'label.completed')}
-                value={stats.passing.oppHalf.completed}
-                onIncrement={() => updateCounter(match.id, half, 'passing.oppHalf.completed', 1)}
-                onDecrement={() => updateCounter(match.id, half, 'passing.oppHalf.completed', -1)}
-                incrementAriaLabel={`${t(lang, 'label.completed')} +`}
-                decrementAriaLabel={`${t(lang, 'label.completed')} -`}
-              />
+              <div className="stat-row">
+                <StatCounter
+                  label={t(lang, 'label.attempts')}
+                  value={stats.passing.oppHalf.attempts}
+                  onIncrement={() => update('passing.oppHalf.attempts', 1)}
+                  onDecrement={() => update('passing.oppHalf.attempts', -1)}
+                />
+                <StatCounter
+                  label={t(lang, 'label.completed')}
+                  value={stats.passing.oppHalf.completed}
+                  onIncrement={() => update('passing.oppHalf.completed', 1)}
+                  onDecrement={() => update('passing.oppHalf.completed', -1)}
+                />
+              </div>
+              <div className="stat-pct">
+                {pct(stats.passing.oppHalf.completed, stats.passing.oppHalf.attempts)}%
+              </div>
             </div>
-          </SectionCard>
+          </>
         )}
 
         {role === 'attackThird' && (
-          <SectionCard
-            title={t(lang, 'role.attackThird')}
-            onReset={() => resetSection(match.id, half, 'attackThird')}
-            resetLabel={t(lang, 'action.trashReset')}
-            confirmText={(title) => t(lang, 'confirm.resetSection', { title })}
-          >
-            <Counter
-              label={t(lang, 'label.byPass')}
-              value={stats.attackThird.pass}
-              onIncrement={() => updateCounter(match.id, half, 'attackThird.pass', 1)}
-              onDecrement={() => updateCounter(match.id, half, 'attackThird.pass', -1)}
-              incrementAriaLabel={`${t(lang, 'label.byPass')} +`}
-              decrementAriaLabel={`${t(lang, 'label.byPass')} -`}
-            />
-            <Counter
-              label={t(lang, 'label.byCarry')}
-              value={stats.attackThird.carry}
-              onIncrement={() => updateCounter(match.id, half, 'attackThird.carry', 1)}
-              onDecrement={() => updateCounter(match.id, half, 'attackThird.carry', -1)}
-              incrementAriaLabel={`${t(lang, 'label.byCarry')} +`}
-              decrementAriaLabel={`${t(lang, 'label.byCarry')} -`}
-            />
-          </SectionCard>
+          <div className="stat-section full">
+            <h3>{t(lang, 'role.attackThird')}</h3>
+            <div className="stat-row">
+              <StatCounter
+                label={t(lang, 'label.byPass')}
+                value={stats.attackThird.pass}
+                onIncrement={() => update('attackThird.pass', 1)}
+                onDecrement={() => update('attackThird.pass', -1)}
+              />
+              <StatCounter
+                label={t(lang, 'label.byCarry')}
+                value={stats.attackThird.carry}
+                onIncrement={() => update('attackThird.carry', 1)}
+                onDecrement={() => update('attackThird.carry', -1)}
+              />
+            </div>
+            <div className="stat-total">
+              {t(lang, 'label.total')}: {stats.attackThird.pass + stats.attackThird.carry}
+            </div>
+          </div>
         )}
 
         {role === 'boxEntry' && (
-          <SectionCard
-            title={t(lang, 'role.boxEntry')}
-            onReset={() => resetSection(match.id, half, 'boxEntry')}
-            resetLabel={t(lang, 'action.trashReset')}
-            confirmText={(title) => t(lang, 'confirm.resetSection', { title })}
-          >
-            <Counter
-              label={t(lang, 'label.byPass')}
-              value={stats.boxEntry.pass}
-              onIncrement={() => updateCounter(match.id, half, 'boxEntry.pass', 1)}
-              onDecrement={() => updateCounter(match.id, half, 'boxEntry.pass', -1)}
-              incrementAriaLabel={`${t(lang, 'label.byPass')} +`}
-              decrementAriaLabel={`${t(lang, 'label.byPass')} -`}
-            />
-            <Counter
-              label={t(lang, 'label.byCarry')}
-              value={stats.boxEntry.carry}
-              onIncrement={() => updateCounter(match.id, half, 'boxEntry.carry', 1)}
-              onDecrement={() => updateCounter(match.id, half, 'boxEntry.carry', -1)}
-              incrementAriaLabel={`${t(lang, 'label.byCarry')} +`}
-              decrementAriaLabel={`${t(lang, 'label.byCarry')} -`}
-            />
-          </SectionCard>
+          <div className="stat-section full">
+            <h3>{t(lang, 'role.boxEntry')}</h3>
+            <div className="stat-row">
+              <StatCounter
+                label={t(lang, 'label.byPass')}
+                value={stats.boxEntry.pass}
+                onIncrement={() => update('boxEntry.pass', 1)}
+                onDecrement={() => update('boxEntry.pass', -1)}
+              />
+              <StatCounter
+                label={t(lang, 'label.byCarry')}
+                value={stats.boxEntry.carry}
+                onIncrement={() => update('boxEntry.carry', 1)}
+                onDecrement={() => update('boxEntry.carry', -1)}
+              />
+            </div>
+            <div className="stat-total">
+              {t(lang, 'label.total')}: {stats.boxEntry.pass + stats.boxEntry.carry}
+            </div>
+          </div>
         )}
 
         {role === 'shots' && (
-          <SectionCard
-            title={t(lang, 'role.shots')}
-            onReset={() => resetSection(match.id, half, 'shots')}
-            resetLabel={t(lang, 'action.trashReset')}
-            confirmText={(title) => t(lang, 'confirm.resetSection', { title })}
-          >
-            <div className="subsection">
+          <>
+            <div className="stat-section">
               <h3>{t(lang, 'label.us')}</h3>
-              <Counter
-                label={t(lang, 'label.onTarget')}
-                value={stats.shots.us.on}
-                onIncrement={() => updateCounter(match.id, half, 'shots.us.on', 1)}
-                onDecrement={() => updateCounter(match.id, half, 'shots.us.on', -1)}
-                incrementAriaLabel={`${t(lang, 'label.onTarget')} +`}
-                decrementAriaLabel={`${t(lang, 'label.onTarget')} -`}
-              />
-              <Counter
-                label={t(lang, 'label.offTarget')}
-                value={stats.shots.us.off}
-                onIncrement={() => updateCounter(match.id, half, 'shots.us.off', 1)}
-                onDecrement={() => updateCounter(match.id, half, 'shots.us.off', -1)}
-                incrementAriaLabel={`${t(lang, 'label.offTarget')} +`}
-                decrementAriaLabel={`${t(lang, 'label.offTarget')} -`}
-              />
+              <div className="stat-row">
+                <StatCounter
+                  label={t(lang, 'label.onTarget')}
+                  value={stats.shots.us.on}
+                  onIncrement={() => update('shots.us.on', 1)}
+                  onDecrement={() => update('shots.us.on', -1)}
+                />
+                <StatCounter
+                  label={t(lang, 'label.offTarget')}
+                  value={stats.shots.us.off}
+                  onIncrement={() => update('shots.us.off', 1)}
+                  onDecrement={() => update('shots.us.off', -1)}
+                />
+              </div>
+              <div className="stat-total">
+                {t(lang, 'label.total')}: {stats.shots.us.on + stats.shots.us.off}
+              </div>
             </div>
-            <div className="subsection">
+            <div className="stat-section">
               <h3>{t(lang, 'label.opp')}</h3>
-              <Counter
-                label={t(lang, 'label.onTarget')}
-                value={stats.shots.opp.on}
-                onIncrement={() => updateCounter(match.id, half, 'shots.opp.on', 1)}
-                onDecrement={() => updateCounter(match.id, half, 'shots.opp.on', -1)}
-                incrementAriaLabel={`${t(lang, 'label.onTarget')} +`}
-                decrementAriaLabel={`${t(lang, 'label.onTarget')} -`}
-              />
-              <Counter
-                label={t(lang, 'label.offTarget')}
-                value={stats.shots.opp.off}
-                onIncrement={() => updateCounter(match.id, half, 'shots.opp.off', 1)}
-                onDecrement={() => updateCounter(match.id, half, 'shots.opp.off', -1)}
-                incrementAriaLabel={`${t(lang, 'label.offTarget')} +`}
-                decrementAriaLabel={`${t(lang, 'label.offTarget')} -`}
-              />
+              <div className="stat-row">
+                <StatCounter
+                  label={t(lang, 'label.onTarget')}
+                  value={stats.shots.opp.on}
+                  onIncrement={() => update('shots.opp.on', 1)}
+                  onDecrement={() => update('shots.opp.on', -1)}
+                />
+                <StatCounter
+                  label={t(lang, 'label.offTarget')}
+                  value={stats.shots.opp.off}
+                  onIncrement={() => update('shots.opp.off', 1)}
+                  onDecrement={() => update('shots.opp.off', -1)}
+                />
+              </div>
+              <div className="stat-total">
+                {t(lang, 'label.total')}: {stats.shots.opp.on + stats.shots.opp.off}
+              </div>
             </div>
-          </SectionCard>
+          </>
         )}
 
-        <div className="card">
-          <div className="summary-grid">
-            {role === 'passing' && (
-              <div className="summary-row">
-                <span className="summary-label">{t(lang, 'label.passPct')}</span>
-                <strong>
-                  {ownPct}% / {oppPct}%
-                </strong>
-              </div>
-            )}
-            {role === 'attackThird' && (
-              <div className="summary-row">
-                <span className="summary-label">{t(lang, 'label.attackTotal')}</span>
-                <strong>{attackTotal}</strong>
-              </div>
-            )}
-            {role === 'boxEntry' && (
-              <div className="summary-row">
-                <span className="summary-label">{t(lang, 'label.boxTotal')}</span>
-                <strong>{boxTotal}</strong>
-              </div>
-            )}
-            {role === 'shots' && (
-              <div className="summary-row">
-                <span className="summary-label">{t(lang, 'label.shotsTotal')}</span>
-                <strong>
-                  {shotsUsTotal} / {shotsOppTotal}
-                </strong>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <Link className="btn secondary" to="/">
-            {t(lang, 'match.backToList')}
-          </Link>
-          <Link className="btn" to={`/summary/${match.id}`}>
-            {t(lang, 'match.summary')}
-          </Link>
+        <div className="action-bar">
+          <button type="button" className="btn ghost small" onClick={resetCurrent}>
+            🗑️
+          </button>
+          <button type="button" className="btn secondary" onClick={onNew}>
+            {t(lang, 'action.newSession')}
+          </button>
+          <button type="button" className="btn primary" onClick={onFinish}>
+            {t(lang, 'action.done')}
+          </button>
         </div>
       </div>
     </>
   )
 }
 
-const SummaryScreen = ({ lang }: { lang: Lang }) => {
-  const { id } = useParams()
-  const { state, showToast } = useStore()
-  const match = state.matches.find((item) => item.id === id)
+const StatCounter = ({
+  label,
+  value,
+  onIncrement,
+  onDecrement,
+}: {
+  label: string
+  value: number
+  onIncrement: () => void
+  onDecrement: () => void
+}) => (
+  <div className="stat-counter">
+    <div className="stat-label">{label}</div>
+    <div className="stat-controls">
+      <button type="button" className="counter-btn minus" onClick={onDecrement} aria-label={`${label} -`}>
+        −
+      </button>
+      <div className="stat-value">{value}</div>
+      <button type="button" className="counter-btn plus" onClick={onIncrement} aria-label={`${label} +`}>
+        +
+      </button>
+    </div>
+  </div>
+)
 
-  if (!match) {
-    return (
-      <div className="container">
-        <div className="card">{t(lang, 'match.notFound')}</div>
-        <Link className="btn" to="/">
-          {t(lang, 'match.back')}
-        </Link>
-      </div>
-    )
+const ExportScreen = ({
+  lang,
+  session,
+  onBack,
+  onNew,
+  showToast,
+}: {
+  lang: Lang
+  session: SessionData
+  onBack: () => void
+  onNew: () => void
+  showToast: (msg: string) => void
+}) => {
+  const total = sumHalfStats(session.first, session.second)
+  const role = session.role
+
+  const buildText = () => {
+    const lines: string[] = []
+    lines.push(`📊 ${t(lang, `role.${role}` as const)}`)
+    lines.push('')
+
+    const formatHalf = (label: string, stats: HalfStats) => {
+      lines.push(`${label}:`)
+      if (role === 'passing') {
+        const ownPct = pct(stats.passing.ownHalf.completed, stats.passing.ownHalf.attempts)
+        const oppPct = pct(stats.passing.oppHalf.completed, stats.passing.oppHalf.attempts)
+        lines.push(`  ${t(lang, 'label.ownHalf')}: ${stats.passing.ownHalf.completed}/${stats.passing.ownHalf.attempts} (${ownPct}%)`)
+        lines.push(`  ${t(lang, 'label.oppHalf')}: ${stats.passing.oppHalf.completed}/${stats.passing.oppHalf.attempts} (${oppPct}%)`)
+      } else if (role === 'attackThird') {
+        lines.push(`  ${t(lang, 'label.byPass')}: ${stats.attackThird.pass}`)
+        lines.push(`  ${t(lang, 'label.byCarry')}: ${stats.attackThird.carry}`)
+        lines.push(`  ${t(lang, 'label.total')}: ${stats.attackThird.pass + stats.attackThird.carry}`)
+      } else if (role === 'boxEntry') {
+        lines.push(`  ${t(lang, 'label.byPass')}: ${stats.boxEntry.pass}`)
+        lines.push(`  ${t(lang, 'label.byCarry')}: ${stats.boxEntry.carry}`)
+        lines.push(`  ${t(lang, 'label.total')}: ${stats.boxEntry.pass + stats.boxEntry.carry}`)
+      } else if (role === 'shots') {
+        lines.push(`  ${t(lang, 'label.us')}: ${stats.shots.us.on} ${t(lang, 'label.onTarget')}, ${stats.shots.us.off} ${t(lang, 'label.offTarget')}`)
+        lines.push(`  ${t(lang, 'label.opp')}: ${stats.shots.opp.on} ${t(lang, 'label.onTarget')}, ${stats.shots.opp.off} ${t(lang, 'label.offTarget')}`)
+      }
+    }
+
+    formatHalf(t(lang, 'match.firstHalf'), session.first)
+    lines.push('')
+    formatHalf(t(lang, 'match.secondHalf'), session.second)
+    lines.push('')
+    formatHalf(t(lang, 'summary.total'), total)
+
+    return lines.join('\n')
   }
 
-  const total = sumHalfStats(match.stats.first, match.stats.second)
-  const role = match.meta.collectorRole ?? 'passing'
-  const shareText = buildShareText(match, lang)
+  const text = buildText()
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(shareText)
-      showToast(t(lang, 'toast.copied'), 'success')
+      await navigator.clipboard.writeText(text)
+      showToast(t(lang, 'toast.copied'))
     } catch {
-      showToast(t(lang, 'toast.importFailed'))
+      showToast(t(lang, 'toast.copyFailed'))
     }
   }
 
   const handleShare = async () => {
     if ('share' in navigator) {
       try {
-        await navigator.share({ text: shareText })
-        showToast(t(lang, 'toast.shared'), 'success')
+        await navigator.share({ text })
+        showToast(t(lang, 'toast.shared'))
         return
       } catch {
         // fall back to copy
@@ -554,56 +516,90 @@ const SummaryScreen = ({ lang }: { lang: Lang }) => {
     await handleCopy()
   }
 
+  const handleDownloadJson = () => {
+    const blob = new Blob([JSON.stringify(session, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `stats-${session.role}-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+    showToast(t(lang, 'toast.downloaded'))
+  }
+
+  const handleDownloadCsv = () => {
+    const lines: string[] = []
+    lines.push('half,category,subcategory,value')
+    
+    const addStats = (halfLabel: string, stats: HalfStats) => {
+      if (role === 'passing') {
+        lines.push(`${halfLabel},passing,ownHalf_attempts,${stats.passing.ownHalf.attempts}`)
+        lines.push(`${halfLabel},passing,ownHalf_completed,${stats.passing.ownHalf.completed}`)
+        lines.push(`${halfLabel},passing,oppHalf_attempts,${stats.passing.oppHalf.attempts}`)
+        lines.push(`${halfLabel},passing,oppHalf_completed,${stats.passing.oppHalf.completed}`)
+      } else if (role === 'attackThird') {
+        lines.push(`${halfLabel},attackThird,pass,${stats.attackThird.pass}`)
+        lines.push(`${halfLabel},attackThird,carry,${stats.attackThird.carry}`)
+      } else if (role === 'boxEntry') {
+        lines.push(`${halfLabel},boxEntry,pass,${stats.boxEntry.pass}`)
+        lines.push(`${halfLabel},boxEntry,carry,${stats.boxEntry.carry}`)
+      } else if (role === 'shots') {
+        lines.push(`${halfLabel},shots,us_on,${stats.shots.us.on}`)
+        lines.push(`${halfLabel},shots,us_off,${stats.shots.us.off}`)
+        lines.push(`${halfLabel},shots,opp_on,${stats.shots.opp.on}`)
+        lines.push(`${halfLabel},shots,opp_off,${stats.shots.opp.off}`)
+      }
+    }
+
+    addStats('first', session.first)
+    addStats('second', session.second)
+    addStats('total', total)
+
+    const csv = lines.join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `stats-${session.role}-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    showToast(t(lang, 'toast.downloaded'))
+  }
+
   return (
     <>
       <header className="topbar">
-        <h1>{t(lang, 'summary.title')}</h1>
-        <Link className="btn ghost" to={`/match/${match.id}`}>
-          {t(lang, 'match.back')}
-        </Link>
+        <h1>{t(lang, 'export.title')}</h1>
+        <button type="button" className="btn ghost" onClick={onBack}>
+          {t(lang, 'action.back')}
+        </button>
       </header>
-      <div className="container">
-        <SummaryBlock label={t(lang, 'match.firstHalf')} stats={match.stats.first} role={role} lang={lang} />
-        <SummaryBlock label={t(lang, 'match.secondHalf')} stats={match.stats.second} role={role} lang={lang} />
-        <SummaryBlock label={t(lang, 'summary.total')} stats={total} role={role} lang={lang} />
+      <div className="container export-container">
+        <div className="summary-card">
+          <h2>{t(lang, `role.${role}` as const)}</h2>
+          <SummaryBlock label={t(lang, 'match.firstHalf')} stats={session.first} role={role} lang={lang} />
+          <SummaryBlock label={t(lang, 'match.secondHalf')} stats={session.second} role={role} lang={lang} />
+          <SummaryBlock label={t(lang, 'summary.total')} stats={total} role={role} lang={lang} highlight />
+        </div>
 
-        <div className="card">
-          <div className="summary-row">
-            <span className="summary-label">{t(lang, 'summary.shareText')}</span>
-          </div>
-          <textarea value={shareText} readOnly />
-          <button type="button" className="btn block" onClick={handleCopy}>
-            {t(lang, 'summary.copy')}
+        <div className="export-actions">
+          <button type="button" className="btn primary block" onClick={handleCopy}>
+            📋 {t(lang, 'export.copy')}
           </button>
           <button type="button" className="btn secondary block" onClick={handleShare}>
-            {t(lang, 'summary.share')}
+            📤 {t(lang, 'export.share')}
+          </button>
+          <button type="button" className="btn ghost block" onClick={handleDownloadJson}>
+            💾 {t(lang, 'export.downloadJson')}
+          </button>
+          <button type="button" className="btn ghost block" onClick={handleDownloadCsv}>
+            📊 {t(lang, 'export.downloadCsv')}
           </button>
         </div>
 
-        <div className="card">
-          <button
-            type="button"
-            className="btn block"
-            onClick={() =>
-              downloadFile(
-                `ottelu-${match.id}.json`,
-                JSON.stringify(match, null, 2),
-                'application/json',
-              )
-            }
-          >
-            {t(lang, 'summary.downloadJson')}
-          </button>
-          <button
-            type="button"
-            className="btn secondary block"
-            onClick={() =>
-              downloadFile(`ottelu-${match.id}.csv`, buildMatchCsv(match), 'text/csv')
-            }
-          >
-            {t(lang, 'summary.downloadCsv')}
-          </button>
-        </div>
+        <button type="button" className="btn danger block" onClick={onNew}>
+          🔄 {t(lang, 'action.newSession')}
+        </button>
       </div>
     </>
   )
@@ -614,72 +610,76 @@ const SummaryBlock = ({
   stats,
   role,
   lang,
+  highlight,
 }: {
   label: string
   stats: HalfStats
   role: StatRole
   lang: Lang
+  highlight?: boolean
 }) => {
   const ownPct = pct(stats.passing.ownHalf.completed, stats.passing.ownHalf.attempts)
   const oppPct = pct(stats.passing.oppHalf.completed, stats.passing.oppHalf.attempts)
-  const attackTotal = stats.attackThird.pass + stats.attackThird.carry
-  const boxTotal = stats.boxEntry.pass + stats.boxEntry.carry
-  const shotsUsTotal = stats.shots.us.on + stats.shots.us.off
-  const shotsOppTotal = stats.shots.opp.on + stats.shots.opp.off
 
   return (
-    <div className="card">
-      <h2>{label}</h2>
-      <div className="summary-grid">
-        {role === 'passing' && (
-          <>
-            <div className="summary-row">
-              <span className="summary-label">{t(lang, 'share.passingOwn')}</span>
-              <strong>
-                {stats.passing.ownHalf.completed}/{stats.passing.ownHalf.attempts} ({ownPct}%)
-              </strong>
-            </div>
-            <div className="summary-row">
-              <span className="summary-label">{t(lang, 'share.passingOpp')}</span>
-              <strong>
-                {stats.passing.oppHalf.completed}/{stats.passing.oppHalf.attempts} ({oppPct}%)
-              </strong>
-            </div>
-          </>
-        )}
-        {role === 'attackThird' && (
-          <div className="summary-row">
-            <span className="summary-label">{t(lang, 'share.attackThird')}</span>
-            <strong>
-              Syöttö {stats.attackThird.pass}, kuljetus {stats.attackThird.carry}, yht {attackTotal}
-            </strong>
+    <div className={`summary-block ${highlight ? 'highlight' : ''}`}>
+      <h3>{label}</h3>
+      {role === 'passing' && (
+        <>
+          <div className="summary-line">
+            <span>{t(lang, 'label.ownHalf')}</span>
+            <strong>{stats.passing.ownHalf.completed}/{stats.passing.ownHalf.attempts} ({ownPct}%)</strong>
           </div>
-        )}
-        {role === 'boxEntry' && (
-          <div className="summary-row">
-            <span className="summary-label">{t(lang, 'share.boxEntry')}</span>
-            <strong>
-              Syöttö {stats.boxEntry.pass}, kuljetus {stats.boxEntry.carry}, yht {boxTotal}
-            </strong>
+          <div className="summary-line">
+            <span>{t(lang, 'label.oppHalf')}</span>
+            <strong>{stats.passing.oppHalf.completed}/{stats.passing.oppHalf.attempts} ({oppPct}%)</strong>
           </div>
-        )}
-        {role === 'shots' && (
-          <>
-            <div className="summary-row">
-              <span className="summary-label">{t(lang, 'share.shotsUs')}</span>
-              <strong>
-                Kohti {stats.shots.us.on}, ohi {stats.shots.us.off}, yht {shotsUsTotal}
-              </strong>
-            </div>
-            <div className="summary-row">
-              <span className="summary-label">{t(lang, 'share.shotsOpp')}</span>
-              <strong>
-                Kohti {stats.shots.opp.on}, ohi {stats.shots.opp.off}, yht {shotsOppTotal}
-              </strong>
-            </div>
-          </>
-        )}
-      </div>
+        </>
+      )}
+      {role === 'attackThird' && (
+        <>
+          <div className="summary-line">
+            <span>{t(lang, 'label.byPass')}</span>
+            <strong>{stats.attackThird.pass}</strong>
+          </div>
+          <div className="summary-line">
+            <span>{t(lang, 'label.byCarry')}</span>
+            <strong>{stats.attackThird.carry}</strong>
+          </div>
+          <div className="summary-line total">
+            <span>{t(lang, 'label.total')}</span>
+            <strong>{stats.attackThird.pass + stats.attackThird.carry}</strong>
+          </div>
+        </>
+      )}
+      {role === 'boxEntry' && (
+        <>
+          <div className="summary-line">
+            <span>{t(lang, 'label.byPass')}</span>
+            <strong>{stats.boxEntry.pass}</strong>
+          </div>
+          <div className="summary-line">
+            <span>{t(lang, 'label.byCarry')}</span>
+            <strong>{stats.boxEntry.carry}</strong>
+          </div>
+          <div className="summary-line total">
+            <span>{t(lang, 'label.total')}</span>
+            <strong>{stats.boxEntry.pass + stats.boxEntry.carry}</strong>
+          </div>
+        </>
+      )}
+      {role === 'shots' && (
+        <>
+          <div className="summary-line">
+            <span>{t(lang, 'label.us')}</span>
+            <strong>{stats.shots.us.on + stats.shots.us.off} ({stats.shots.us.on} {t(lang, 'label.onTarget')})</strong>
+          </div>
+          <div className="summary-line">
+            <span>{t(lang, 'label.opp')}</span>
+            <strong>{stats.shots.opp.on + stats.shots.opp.off} ({stats.shots.opp.on} {t(lang, 'label.onTarget')})</strong>
+          </div>
+        </>
+      )}
     </div>
   )
 }
